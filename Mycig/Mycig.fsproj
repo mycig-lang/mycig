@@ -6,10 +6,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="guarantee_system\Structure.fs" />
+    <None Include="files\ReadFile.fs" />
     <Compile Include="Program.fs" />
-	<None Include="aegith\*" />
-	<None Include="aegith\*\*" />
-	<None Include="aegith\*\*\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="compiler\cut_parser\Parser.fs" />
+    <None Include="compiler\TypeInference.fs" />
+    <None Include="compiler\SimpleScope.fs" />
+    <None Include="compiler\Parser.fs" />
+    <None Include="compiler\FlatAST.fs" />
   </ItemGroup>
 
 </Project>
