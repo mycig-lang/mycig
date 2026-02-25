@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="compiler\cut_parser\Parser.fs" />
+    <Compile Include="compiler\cut_parser\CutParser.fs" />
     <None Include="compiler\TypeInference.fs" />
     <None Include="compiler\SimpleScope.fs" />
     <None Include="compiler\Parser.fs" />

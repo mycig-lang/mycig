@@ -1,4 +1,4 @@
-namespace Aegith.Compiler
+namespace Mycig.Compiler
 
 type SimpleScope() =
     let mutable scope = [|[||]|]

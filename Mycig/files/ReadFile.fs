@@ -1,4 +1,4 @@
-namespace Aegith
+namespace Mycig
 
 open System.IO
 

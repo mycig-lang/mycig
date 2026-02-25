@@ -1,4 +1,4 @@
-namespace Aegith.Compiler
+namespace Mycig.Compiler
 
 type TypeInference(fast: FlatAST) =
     member val private FlatAST = fast.getAST() |> Array.indexed with get, set
