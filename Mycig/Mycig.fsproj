@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="docs\fop.md" />
     <None Include="guarantee_system\Structure.fs" />
     <None Include="files\ReadFile.fs" />
   </ItemGroup>
