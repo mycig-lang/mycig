@@ -16,13 +16,13 @@ type Parser() =
 
     let endLines = many (newline <|> pchar ';')
     let funcEndLines = many newline
-    let stEndLines = many newline
-    let prEndLines = many newline
+    let frameEndLines = many newline
+    let implEndLines = many newline
+    let fieldEndLines = many newline
     let ident = regex @"[\p{L}_][\p{L}\p{N}_]*"
     
     let funcTerm, funcTermRef = createParserForwardedToRef()
-    let structTerm, structTermRef = createParserForwardedToRef()
-    let protocolTerm, protocolTermRef = createParserForwardedToRef()
+    let frameTerm, frameTermRef = createParserForwardedToRef()
     let typ, typRef = createParserForwardedToRef()
     let exprTerm, exprTermref = createParserForwardedToRef()
     
@@ -168,61 +168,6 @@ type Parser() =
                         (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
                 }
             )
-    let val_st =
-        pipe2
-            getPosition
-            (opt (attempt (stringReturn "pub" true .>> spaces1)) .>> pstring "val" .>> spaces1
-                .>>. ident
-                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
-                .>> (spaces .>> pchar '=' .>> spaces)
-                .>>. blockOrExp
-                    opp.ExpressionParser
-                .>> endLines
-            )
-            (fun pos (((isPub, name), t), content) ->
-                fast.add {
-                    Type = "val_struct"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf
-                        "[bool: %b, str: \"%s\", ref: %i, arr: [%s]]"
-                        (match isPub with | Some v -> v | None -> false)
-                        name
-                        (
-                            match t with
-                            | Some t -> t
-                            | None -> -1
-                        )
-                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                }
-            )
-    let val_pr =
-        pipe2
-            getPosition
-            (opt (attempt (stringReturn "abs" true .>> spaces1)) .>> pstring "val" .>> spaces1
-                .>>. ident
-                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
-                .>> (spaces .>> pchar '=' .>> spaces)
-                .>>. blockOrExp
-                    opp.ExpressionParser
-            )
-            (fun pos (((isAbs, name), t), content) ->
-                fast.add {
-                    Type = "val_protocol"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf
-                        "[bool: %b, str: \"%s\", ref: %i, arr: [%s]]"
-                        (match isAbs with | Some v -> v | None -> false)
-                        name
-                        (
-                            match t with
-                            | Some t -> t
-                            | None -> -1
-                        )
-                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                }
-            )
 
     let func_ =
         pipe2
@@ -259,11 +204,12 @@ type Parser() =
                         (content |> List.map (sprintf "ref: %i") |> String .concat ", ")
                 }
             )
-    let func_st =
-        pipe2
+    let func_impl =
+        pipe3
             getPosition
-            (opt (stringReturn "pub" true .>> spaces1) .>> pstring "func" .>> spaces1
-                .>>. ident
+            (opt (attempt (pstring "pub" <|> pstring "abs" .>> spaces1)))
+            (pstring "func" .>> spaces1
+                >>. ident
                 .>>. between
                     (spaces .>> pchar '(')
                     (spaces .>> pchar ')')
@@ -280,49 +226,14 @@ type Parser() =
                 .>>. block1 funcTerm
                 .>> funcEndLines
             )
-            (fun pos ((((isMod, name), args), rettyp), content) ->
+            (fun pos isMod (((name, args), rettyp), content) ->
                 fast.add {
-                    Type = "func_st"
+                    Type = "func_impl"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[bool: %b, str: \"%s\", ref: %i, arr: [%s], arr[%s]]"
-                        (match isMod with | Some v -> v | None -> false)
-                        name
-                        (match rettyp with | Some typ -> typ | None -> -1)
-                        (args |> List.map (fun ((isrepo, f), s) -> sprintf "arr: [bool: %b, str: \"%s\", ref: %i]" (match isrepo with | Some _ -> true | None -> false) f (match s with | Some i -> i | None -> -1)) |> String.concat ", ")
-                        (content |> List.map (sprintf "ref: %i") |> String .concat ", ")
-                }
-            )
-    let func_pr =
-        pipe2
-            getPosition
-            (opt (stringReturn "abs" true .>> spaces1) .>> pstring "func" .>> spaces1
-                .>>. ident
-                .>>. between
-                    (spaces .>> pchar '(')
-                    (spaces .>> pchar ')')
-                    (sepBy
-                        (
-                            spaces
-                            >>. opt (attempt (stringReturn "*" 0uy))
-                            .>>. ident
-                            .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
-                        )
-                        (spaces .>> pchar ',')
-                    )
-                .>>. opt (attempt (spaces >>. typp .>> spaces))
-                .>>. block1 funcTerm
-                .>> funcEndLines
-            )
-            (fun pos ((((isMod, name), args), rettyp), content) ->
-                fast.add {
-                    Type = "func_pr"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf
-                        "[bool: %b, str: \"%s\", ref: %i, arr: [%s], arr[%s]]"
-                        (match isMod with | Some v -> v | None -> false)
+                        "[str: \"%s\", str: \"%s\", ref: %i, arr: [%s], arr[%s]]"
+                        (match isMod with | Some v -> v | None -> "pri")
                         name
                         (match rettyp with | Some typ -> typ | None -> -1)
                         (args |> List.map (fun ((isrepo, f), s) -> sprintf "arr: [bool: %b, str: \"%s\", ref: %i]" (match isrepo with | Some _ -> true | None -> false) f (match s with | Some i -> i | None -> -1)) |> String.concat ", ")
@@ -363,51 +274,88 @@ type Parser() =
                 }
             )
 
-    let async_ =
-        pipe2
+    let impl_ =
+        pipe3
             getPosition
-            (
-                pstring "async"
-                >>. between
-                    (spaces .>> pchar '(')
-                    (pchar ')' .>> spaces)
-                    (spaces >>. ident .>> spaces)
-                .>>. opp.ExpressionParser
+            (opt (attempt (pstring "pub" <|> pstring "abs" .>> spaces1)))
+            (pstring "impl" .>> spaces1
+                >>. ident
+                .>>. block (
+                    achoice func_impl [
+                        initf
+                    ]
+                )
             )
-            (fun pos (chan, content) ->
+            (fun pos modi (name, content) ->
                 fast.add {
-                    Type = "async"
+                    Type = "impl"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[str: \"%s\", ref: %i]"
-                        chan
-                        content
+                        "[str: \"%s\", arr: [%s]]"
+                        name
+                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
+
+                }
+            )
+    let field_ =
+        pipe3
+            getPosition
+            (opt (attempt (pstring "pub" .>> spaces1)))
+            (pstring "field" .>> spaces1
+                >>. ident
+                .>>. block (
+                    (opt (attempt (stringReturn "*" true .>> spaces)))
+                    .>>. ident
+                    .>> (spaces .>> pchar ':' .>> spaces)
+                    .>>. typp
+                )
+            )
+            (fun pos modi (name, content) ->
+                fast.add {
+                    Type = "field"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[str: \"%s\", str: \"%s\", arr: [%s]]"
+                        (match modi with | Some v -> v | None -> "pri")
+                        name
+                        (
+                            content
+                            |> List.map (fun ((modi, name), t) ->
+                                sprintf
+                                    "bool: %b, str: \"%s\", ref: %i"
+                                    (match modi with | Some v -> v | None -> false)
+                                    name
+                                    t
+                            )
+                            |> String.concat ", "
+                        )
                 }
             )
 
-    let struct_ =
+    let frame_ =
         pipe3
             getPosition
             (opt (attempt (stringReturn "pub" true .>> spaces1)))
-            (pstring "struct" .>> spaces1
+            (pstring "frame" .>> spaces1
                 >>. ident
                 .>>. opt (
                     attempt (
                         spaces1
-                            .>> pstring "impl"
+                            .>> pstring ":"
                             .>> spaces
                             >>. ident
                             .>>. opt (attempt (many (spaces .>> pchar ',' .>> spaces >>. ident)))
                     )
                 )
                 .>>. block
-                    structTerm
-                .>> stEndLines
+                    frameTerm
+                .>> frameEndLines
             )
             (fun pos modi ((name, protocols), content) ->
                 fast.add {
-                    Type = "struct"
+                    Type = "frame"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
@@ -418,37 +366,13 @@ type Parser() =
                         (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
                 }
             )
-    
-    let protocol_ =
-        pipe3
-            getPosition
-            (opt (attempt (stringReturn "pub" true .>> spaces1)))
-            (pstring "protocol" .>> spaces1
-                >>. ident
-                .>>. block
-                    protocolTerm
-                .>> prEndLines
-            )
-            (fun pos modi (name, content) ->
-                fast.add {
-                    Type = "protocol"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf
-                        "[bool: %b, str: \"%s\", arr: [%s]]"
-                        (match modi with | Some v -> v | None -> false)
-                        name
-                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                }
-            )
 
     let program =
         spaces
         >>. package_
         .>>. many import_
-        .>>. many (achoice protocol_ [
+        .>>. many (achoice frame_ [
             func_
-            struct_
         ]) .>> eof
         |>> (fun ((package, imports), body) ->
             fast.add {
@@ -603,16 +527,10 @@ type Parser() =
             opp.ExpressionParser [
             func_ .>> funcEndLines
             let_ .>> endLines
-            async_ .>> endLines
         ] .>> endLines
-        structTermRef.Value <- achoice
-            (func_st .>> funcEndLines) [
-            val_st .>> endLines
-            initf .>> funcEndLines
-        ]
-        protocolTermRef.Value <- achoice
-            (func_pr .>> funcEndLines) [
-            val_pr .>> endLines
+        frameTermRef.Value <- achoice
+            (impl_ .>> implEndLines) [
+            field_ .>> fieldEndLines
         ]
         exprTermref.Value <-
             achoice
@@ -828,7 +746,7 @@ type Parser() =
                                 Data = sprintf "[str: \"%s\", arr: [%s]]" name (args |> List.map (sprintf "ref: %i") |> String.concat ", ")
                             }
                         )
-                    variable
+                    //variable
                     pipe2
                         getPosition
                         ident
@@ -881,8 +799,6 @@ type Parser() =
                         )
                 ]
                 .>> spaces
-
-    member _.Struct = struct_
 
     member _.run (s: string) =
         let s = s.Replace("\r", "")

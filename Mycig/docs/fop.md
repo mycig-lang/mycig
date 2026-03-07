@@ -4,7 +4,9 @@ package main
 import std::fmt
 
 frame Animal {
-    abs func move()
+    abs impl Self {
+        abs func move(self)
+    }
 }
 
 frame Pet: Animal {
@@ -12,7 +14,7 @@ frame Pet: Animal {
         *name: str
     }
 
-    impl Self {
+    abs impl Self {
         abs init new(*name)
         abs func greet(self)
         abs func getName(self)
@@ -24,15 +26,18 @@ frame Cat: Pet {
         *name: str
     }
 
-    sealed impl Pet {
+    impl Pet {
         pub init new(*name) {
             *name: name
         }
         pub func greet(self) {
             fmt::println("Hello! I'm {}.", self.name)
         }
-        pub func getname(self) {
+        pub func getName(self) {
             self.name
+        }
+        pub func move(self) {
+            fmt::println("{} moved.", self.name)
         }
     }
 }
@@ -42,15 +47,18 @@ frame Dog: Pet {
         *name: str
     }
 
-    sealed impl Pet {
+    impl Pet {
         pub init new(*name) {
             *name: name
         }
         pub func greet(self) {
             fmt::println("Hello! I'm {}.", self.name)
         }
-        pub func getname(self) {
+        pub func getName(self) {
             self.name
+        }
+        pub func move(self) {
+            fmt::println("{} moved.", self.name)
         }
     }
 }

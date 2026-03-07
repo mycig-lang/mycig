@@ -1,8 +1,24 @@
-﻿open Mycig.CutParser
+﻿open Mycig.Compiler
 
 [<EntryPoint>]
 let main _ =
-    let p = Parser().string("a").string("s")
-    p.buf |> printfn "%A"
-    p.run "as" |> printfn "%A"
+    let p = Parser()
+    let code = @"
+package main
+
+import std::fmt
+
+frame Animal {
+    field Self {
+        *name: str
+    }
+    impl Self {
+        pub func move(self) {
+            1
+        }
+    }
+}
+"
+    p.run code |> printfn "%i\n"
+    p.getFlatAST() |> printfn "%A"
     0

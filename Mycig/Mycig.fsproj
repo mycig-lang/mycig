@@ -13,11 +13,16 @@
 
   <ItemGroup>
     <Compile Include="compiler\cut_parser\CutParser.fs" />
-    <None Include="compiler\TypeInference.fs" />
-    <None Include="compiler\SimpleScope.fs" />
-    <None Include="compiler\Parser.fs" />
-    <None Include="compiler\FlatAST.fs" />
+    <Compile Include="compiler\ParserModule.fs" />
+    <Compile Include="compiler\FlatAST.fs" />
+    <Compile Include="compiler\TypeInference.fs" />
+    <Compile Include="compiler\SimpleScope.fs" />
+    <Compile Include="compiler\Parser.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FParsec" Version="1.1.1" />
   </ItemGroup>
 
 </Project>
