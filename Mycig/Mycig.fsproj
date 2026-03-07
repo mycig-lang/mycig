@@ -12,7 +12,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="compiler\cut_parser\CutParser.fs" />
     <Compile Include="compiler\ParserModule.fs" />
     <Compile Include="compiler\FlatAST.fs" />
     <Compile Include="compiler\TypeInference.fs" />
