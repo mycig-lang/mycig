@@ -79,8 +79,9 @@ type Parser() =
             (spaces .>> pchar '}' .>> spaces)
             (many1 p)
     let blockOrExp p =
-        achoice (spaces >>. p |>> (fun x -> [x])) [
+        choice [
             block1 funcTerm
+            spaces >>. p |>> (fun x -> [x])
         ]
 
     let variable = ident
@@ -293,8 +294,9 @@ type Parser() =
             (pstring "impl" .>> spaces1
                 >>. ident
                 .>>. block (
-                    achoice func_impl [
+                    choice [
                         initf
+                        func_impl
                     ]
                 )
             )
@@ -384,8 +386,9 @@ type Parser() =
         spaces
         >>. package_
         .>>. many import_
-        .>>. many (achoice frame_ [
+        .>>. many (choice [
             func_
+            frame_
         ]) .>> eof
         |>> (fun ((package, imports), body) ->
             fast.add {
