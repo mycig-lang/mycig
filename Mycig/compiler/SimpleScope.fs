@@ -1,8 +1,10 @@
 namespace Mycig.Compiler
 
+open System.Collections.Generic
+
 type SimpleScope() =
-    let mutable scope = [|[||]|]
-    let mutable len = 0
+    let mutable scope = [||]
+    let mutable len = -1
 
     member _.createScope() =
         scope <- scope |> Array.append [|[||]|]
@@ -10,9 +12,10 @@ type SimpleScope() =
 
     member _.deleteScope() =
         if
-            len = 0
-            |> not
-        then scope <- scope[..len]
+            len >= 0
+        then
+            scope <- scope[..len]
+            len <- len - 1
 
     member _.add (s: string) =
         if

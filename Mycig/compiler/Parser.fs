@@ -1,11 +1,12 @@
 namespace Mycig.Compiler
 
+open ParserModule
+
 open FParsec
 
 type Node = string * int64 * int64 * string
 
 type Assoc = Associativity
-
 
 /// <summary>
 /// require type inference: -1
@@ -15,13 +16,6 @@ type Parser() =
     let fast = FlatAST()
     let ss = SimpleScope()
 
-    let endLines = many (newline <|> pchar ';')
-    let funcEndLines = many newline
-    let frameEndLines = many newline
-    let implEndLines = many newline
-    let fieldEndLines = many newline
-    let ident = regex @"[\p{L}_][\p{L}\p{N}_]*"
-    
     let funcTerm, funcTermRef = createParserForwardedToRef()
     let frameTerm, frameTermRef = createParserForwardedToRef()
     let typ, typRef = createParserForwardedToRef()
@@ -63,28 +57,68 @@ type Parser() =
                 )
         ]
 
+    let variable = ident
+
     let block p =
         between
             (spaces .>> pchar '{' .>> spaces)
             (spaces .>> pchar '}' .>> spaces)
-            (many p)
+            (
+                pstring ""
+                |>> (fun _ ->
+                    ss.createScope()
+                )
+                >>. many p
+                |>> (fun x ->
+                    ss.deleteScope()
+                    x
+                )
+            )
     let zblock p =
         between
             (spaces .>> pchar '{' .>> spaces)
             (spaces .>> pchar '}' .>> spaces)
-            p
+            (
+                pstring ""
+                |>> (fun _ ->
+                    ss.createScope()
+                )
+                >>. p
+                |>> (fun x ->
+                    ss.deleteScope()
+                    x
+                )
+            )
     let block1 p =
         between
             (spaces .>> pchar '{' .>> spaces)
             (spaces .>> pchar '}' .>> spaces)
+            (
+                pstring ""
+                |>> (fun _ ->
+                    ss.createScope()
+                )
+                >>. many1 p
+                |>> (fun x ->
+                    ss.deleteScope()
+                    x
+                )
+            )
+    let funcBlock p =
+        between
+            (spaces .>> pchar '{' .>> spaces)
+            (spaces .>> pchar '}' .>> spaces)
+            (many p)
+    let funcBlock1 p =
+        between
+            (spaces .>> pchar '{' .>> spaces)
+            (spaces .>> pchar '}' .>> spaces)
             (many1 p)
-    let blockOrExp p =
+    let blockOrExp =
         choice [
             block1 funcTerm
-            spaces >>. p |>> (fun x -> [x])
+            spaces >>. exprTerm |>> (fun x -> [x])
         ]
-
-    let variable = ident
 
     let opp = OperatorPrecedenceParser()
     
@@ -143,10 +177,10 @@ type Parser() =
                 .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
                 .>> (spaces .>> pchar '=' .>> spaces)
                 .>>. blockOrExp
-                    opp.ExpressionParser
                 .>> endLines
             )
             (fun pos ((((ismut, isrepo), name), t), content) ->
+                ss.add name
                 fast.add {
                     Type = "let"
                     Line = pos.Line
@@ -161,7 +195,11 @@ type Parser() =
                             | Some t -> t
                             | None -> -1
                         )
-                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String.concat ", "
+                        )
                 }
             )
 
@@ -173,31 +211,70 @@ type Parser() =
                 .>>. between
                     (spaces .>> pchar '(')
                     (spaces .>> pchar ')')
-                    (sepBy
-                        (
-                            spaces
-                            >>. opt (attempt (stringReturn "*" 0uy))
-                            .>>. ident
-                            .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
+                    (
+                        sepBy
+                            (
+                                spaces
+                                >>. opt (attempt (stringReturn "*" 0uy))
+                                .>>. ident
+                                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
+                            )
+                            (spaces .>> pchar ',')
+                        |>> (fun lst ->
+                            ss.createScope()
+                            lst
+                            |> List.iter (fun ((_, name), _) ->
+                                ss.add name
+                            )
+                            lst
                         )
-                        (spaces .>> pchar ',')
                     )
                 .>>. opt (attempt (spaces >>. typp .>> spaces))
-                .>>. block1 funcTerm
+                .>>. funcBlock1 funcTerm
                 .>> funcEndLines
             )
             (fun pos ((((isMod, name), args), rettyp), content) ->
+                ss.deleteScope()
                 fast.add {
                     Type = "func"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
                         "[bool: %b, str: \"%s\", ref: %i, arr: [%s], arr[%s]]"
-                        (match isMod with | Some v -> v | None -> false)
+                        (
+                            match isMod with
+                            | Some v -> v
+                            | None -> false
+                        )
                         name
-                        (match rettyp with | Some typ -> typ | None -> -1)
-                        (args |> List.map (fun ((isrepo, f), s) -> sprintf "arr: [bool: %b, str: \"%s\", ref: %i]" (match isrepo with | Some _ -> true | None -> false) f (match s with | Some i -> i | None -> -1)) |> String.concat ", ")
-                        (content |> List.map (sprintf "ref: %i") |> String .concat ", ")
+                        (
+                            match rettyp with
+                            | Some typ -> typ
+                            | None -> -1
+                        )
+                        (
+                            args
+                            |> List.map (fun ((idt, f), s) ->
+                                sprintf
+                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
+                                    (
+                                        match idt with
+                                        | Some _ -> true
+                                        | None -> false
+                                    )
+                                    f
+                                    (
+                                        match s with
+                                        | Some i -> i
+                                        | None -> -1
+                                    )
+                            ) |> String.concat ", "
+                        )
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String .concat ", "
+                        )
                 }
             )
     let func_impl =
@@ -209,20 +286,30 @@ type Parser() =
                 .>>. between
                     (spaces .>> pchar '(')
                     (spaces .>> pchar ')')
-                    (sepBy
-                        (
-                            spaces
-                            >>. opt (attempt (stringReturn "*" 0uy))
-                            .>>. ident
-                            .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
+                    (
+                        sepBy
+                            (
+                                spaces
+                                >>. opt (attempt (stringReturn "*" 0uy))
+                                .>>. ident
+                                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
+                            )
+                            (spaces .>> pchar ',')
+                        |>> (fun lst ->
+                            ss.createScope()
+                            lst
+                            |> List.iter (fun ((_, name), _) ->
+                                ss.add name
+                            )
+                            lst
                         )
-                        (spaces .>> pchar ',')
                     )
                 .>>. opt (attempt (spaces >>. typp .>> spaces))
-                .>>. block1 funcTerm
+                .>>. funcBlock1 funcTerm
                 .>> funcEndLines
             )
             (fun pos isMod (((name, args), rettyp), content) ->
+                ss.deleteScope()
                 fast.add {
                     Type = "func_impl"
                     Line = pos.Line
@@ -234,10 +321,10 @@ type Parser() =
                         (match rettyp with | Some typ -> typ | None -> -1)
                         (
                             args
-                            |> List.map (fun ((isrepo, f), s) ->
+                            |> List.map (fun ((idt, f), s) ->
                                 sprintf
                                     "arr: [bool: %b, str: \"%s\", ref: %i]"
-                                    (match isrepo with | Some _ -> true | None -> false)
+                                    (match idt with | Some _ -> true | None -> false)
                                     f
                                     (
                                         match s with
@@ -250,7 +337,11 @@ type Parser() =
                             )
                             |> String.concat ", "
                         )
-                        (content |> List.map (sprintf "ref: %i") |> String .concat ", ")
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String .concat ", "
+                        )
                 }
             )
     let initf =
@@ -270,7 +361,13 @@ type Parser() =
                         )
                         (spaces .>> pchar ',')
                     )
-                .>>. block1 (pstring "@" >>% -1)   // ToDO
+                .>>. funcBlock (
+                    (opt (attempt (stringReturn "*" true .>> spaces)))
+                    .>>. ident
+                    .>> (spaces .>> pchar ':' .>> spaces)
+                    .>>. exprTerm
+                    .>> (spaces .>> endLines .>> spaces)
+                )
                 .>> funcEndLines
             )
             (fun pos (((isMod, name), args), content) ->
@@ -282,8 +379,40 @@ type Parser() =
                         "[bool: %b, str: \"%s\", arr: [%s], arr[%s]]"
                         (match isMod with | Some v -> v | None -> false)
                         name
-                        (args |> List.map (fun ((isrepo, f), s) -> sprintf "arr: [bool: %b, str: \"%s\", ref: %i]" (match isrepo with | Some _ -> true | None -> false) f (match s with | Some i -> i | None -> -1)) |> String.concat ", ")
-                        (content |> List.map (sprintf "ref: %i") |> String .concat ", ")
+                        (
+                            args
+                            |> List.map (fun ((idt, f), s) ->
+                                sprintf
+                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
+                                    (
+                                        match idt with
+                                        | Some _ -> true
+                                        | None -> false
+                                    )
+                                    f
+                                    (
+                                        match s with
+                                        | Some i -> i
+                                        | None -> -1
+                                    )
+                            )
+                            |> String.concat ", "
+                        )
+                        (
+                            content
+                            |> List.map (fun ((idt, f), s) ->
+                                sprintf
+                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
+                                    (
+                                        match idt with
+                                        | Some _ -> true
+                                        | None -> false
+                                    )
+                                    f
+                                    s
+                            )
+                            |> String .concat ", "
+                        )
                 }
             )
 
@@ -295,7 +424,7 @@ type Parser() =
                 >>. ident
                 .>>. block (
                     choice [
-                        initf
+                        attempt initf
                         func_impl
                     ]
                 )
@@ -308,7 +437,11 @@ type Parser() =
                     Data = sprintf
                         "[str: \"%s\", arr: [%s]]"
                         name
-                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String.concat ", "
+                        )
 
                 }
             )
@@ -339,7 +472,7 @@ type Parser() =
                             content
                             |> List.map (fun ((modi, name), t) ->
                                 sprintf
-                                    "bool: %b, str: \"%s\", ref: %i"
+                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
                                     (match modi with | Some v -> v | None -> false)
                                     name
                                     t
@@ -368,17 +501,38 @@ type Parser() =
                     frameTerm
                 .>> frameEndLines
             )
-            (fun pos modi ((name, protocols), content) ->
+            (fun pos modi ((name, frames), content) ->
                 fast.add {
                     Type = "frame"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
                         "[bool: %b, str: \"%s\", arr: [%s], arr: [%s]]"
-                        (match modi with | Some v -> v | None -> false)
+                        (
+                            match modi with
+                            | Some _ -> true
+                            | None -> false
+                        )
                         name
-                        ((match protocols with | Some (f, lst) -> [f] @ (match lst with | Some l -> l | None -> []) | None -> []) |> List.map (sprintf "str: \"%s\"") |> String.concat ", ")
-                        (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                        (
+                            (
+                                match frames with
+                                | Some (f, lst) ->
+                                    [f] @ (
+                                        match lst with
+                                        | Some l -> l
+                                        | None -> []
+                                    )
+                                | None -> []
+                            )
+                            |> List.map (sprintf "str: \"%s\"")
+                            |> String.concat ", "
+                        )
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String.concat ", "
+                        )
                 }
             )
 
@@ -398,8 +552,16 @@ type Parser() =
                 Data = sprintf
                     "[ref: %i, arr: [%s], arr: [%s]]"
                     package
-                    (imports |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                    (body |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                    (
+                        imports
+                        |> List.map (sprintf "ref: %i")
+                        |> String.concat ", "
+                    )
+                    (
+                        body
+                        |> List.map (sprintf "ref: %i")
+                        |> String.concat ", "
+                    )
             }
         )
     /// <summary>
@@ -486,7 +648,14 @@ type Parser() =
                                 Type = "type_g"
                                 Line = pos.Line
                                 Column = pos.Column
-                                Data = sprintf "[str: \"%s\", arr: [%s]]" f (g |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                                Data = sprintf
+                                    "[str: \"%s\", arr: [%s]]"
+                                    f
+                                    (
+                                        g
+                                        |> List.map (sprintf "ref: %i")
+                                        |> String.concat ", "
+                                    )
                             }
                         )
                 )
@@ -507,8 +676,16 @@ type Parser() =
                             Column = pos.Column
                             Data = sprintf
                                 "[arr: [%s], ref: %i]"
-                                (arg |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                                (match rettyp with | Some t -> t | None -> -1)
+                                (
+                                    arg
+                                    |> List.map (sprintf "ref: %i")
+                                    |> String.concat ", "
+                                )
+                                (
+                                    match rettyp with
+                                    | Some t -> t
+                                    | None -> -1
+                                )
                         }
                     )
                 pipe2
@@ -696,9 +873,21 @@ type Parser() =
                             Column = pos.Column
                             Data = sprintf
                                 "[arr: [%s], ref: %i, arr: [%s]]"
-                                (arg |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                                (match rettyp with | Some typ -> typ | None -> -1)
-                                (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                                (
+                                    arg
+                                    |> List.map (sprintf "ref: %i")
+                                    |> String.concat ", "
+                                )
+                                (
+                                    match rettyp with
+                                    | Some typ -> typ
+                                    | None -> -1
+                                )
+                                (
+                                    content
+                                    |> List.map (sprintf "ref: %i")
+                                    |> String.concat ", "
+                                )
                         }
                     )
                 pipe2
@@ -747,7 +936,14 @@ type Parser() =
                             Type = "call_func"
                             Line = pos.Line
                             Column = pos.Column
-                            Data = sprintf "[str: \"%s\", arr: [%s]]" name (args |> List.map (sprintf "ref: %i") |> String.concat ", ")
+                            Data = sprintf
+                                "[str: \"%s\", arr: [%s]]"
+                                name
+                                (
+                                    args
+                                    |> List.map (sprintf "ref: %i")
+                                    |> String.concat ", "
+                                )
                         }
                     )
                 //variable
@@ -783,43 +979,17 @@ type Parser() =
                             Column = pos.Column
                             Data = sprintf
                                 "[arr: [%s]]"
-                                (content |> List.map (sprintf "ref: %i") |> String.concat ", ")
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (
-                        pchar '*'
-                        .>> spaces
-                        >>. exprTerm
-                    )
-                    (fun pos expr ->
-                        fast.add {
-                            Type = "give_repo"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf "[ref: %i]" expr
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (
-                        pchar '&'
-                        .>> spaces
-                        >>. exprTerm
-                    )
-                    (fun pos expr ->
-                        fast.add {
-                            Type = "com_ref"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf "[ref: %i]" expr
+                                (
+                                    content
+                                    |> List.map (sprintf "ref: %i")
+                                    |> String.concat ", "
+                                )
                         }
                     )
                 ]
                 .>> spaces
 
-    member _.run (s: string) =
+    member _.run (s: string): int =
         let s = s.Replace("\r", "")
         #if DEBUG
         printfn "parse: %A\n" s
