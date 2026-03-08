@@ -11,6 +11,7 @@ import std::fmt
 frame Animal {
     field Self {
         *name: str
+        s: abs int
     }
     impl Self {
         pub func move(self) {

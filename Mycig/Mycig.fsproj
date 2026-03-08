@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="files\ReadFile.fs" />
     <Compile Include="compiler\ParserModule.fs" />
     <Compile Include="compiler\FlatAST.fs" />
     <Compile Include="compiler\TypeInference.fs" />
