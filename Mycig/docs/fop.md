@@ -9,26 +9,26 @@ frame Animal {
     }
 }
 
-frame Pet: Animal {
+frame Pet : pub Animal {
     field Self {
-        *name: str
+        name: str
     }
 
     abs impl Self {
-        abs init new(*name)
+        abs init new(name)
         abs func greet(self)
         abs func getName(self)
     }
 }
 
-frame Cat: Pet {
+frame Cat : pub Pet {
     field Pet {
-        *name: str
+        name: str
     }
 
     impl Pet {
-        pub init new(*name) {
-            *name: name
+        pub init new(name) {
+            name: name
         }
         pub func greet(self) {
             fmt::println("Hello! I'm {}.", self.name)
@@ -42,14 +42,14 @@ frame Cat: Pet {
     }
 }
 
-frame Dog: Pet {
+frame Dog : pub Pet {
     field Pet {
         *name: str
     }
 
     impl Pet {
-        pub init new(*name) {
-            *name: name
+        pub init new(name) {
+            name: name
         }
         pub func greet(self) {
             fmt::println("Hello! I'm {}.", self.name)
@@ -68,8 +68,8 @@ func greet(pet: Pet) {
 }
 
 func main() {
-    let *cat = Cat::new(*"Lucy")
-    let *dog = Dog::new(*"Tom")
+    let cat = Cat::new("Lucy")
+    let dog = Dog::new("Tom")
     
     greet(cat as Pet)
     greet(dog as pet)

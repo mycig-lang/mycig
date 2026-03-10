@@ -7,12 +7,13 @@
 
   <ItemGroup>
     <None Include="docs\fop.md" />
-    <None Include="guarantee_system\Structure.fs" />
+    <None Include="memm\Frame.fs" />
     <None Include="files\ReadFile.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="files\ReadFile.fs" />
+    <None Include="compiler\README.md" />
     <Compile Include="compiler\FlatAST.fs" />
     <Compile Include="compiler\TypeInference.fs" />
     <Compile Include="compiler\SimpleScope.fs" />
