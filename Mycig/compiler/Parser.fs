@@ -159,6 +159,67 @@ type Parser() =
             )
         .>> spaces
 
+    let if_ =
+        pipe2
+            getPosition
+            (
+                pstring "if"
+                .>> spaces1
+                >>. exprTerm
+                .>>. funcBlock funcTerm
+                .>> spaces
+                .>>. many (
+                    pstring "else"
+                    .>> spaces
+                    .>> pstring "if"
+                    >>. exprTerm
+                    .>>. funcBlock funcTerm
+                    .>> spaces
+                )
+                .>>. opt (
+                    pstring "else"
+                    .>> spaces
+                    >>. funcBlock funcTerm
+                )
+            )
+            (fun pos ((f, s), opt) ->
+                fast.add {
+                    Type = "if"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[ref: %i, arr: [%s], arr: [%s], opt: [%s]]"
+                        (fst f)
+                        (
+                            snd f
+                            |> List.map (sprintf "ref: %i")
+                            |> String.concat ", "
+                        )
+                        (
+                            s
+                            |> List.map (fun (e, content) ->
+                                sprintf
+                                    "arr: [ref: %i, arr: [%s]]"
+                                    e
+                                    (
+                                        content
+                                        |> List.map (sprintf "ref: %i")
+                                        |> String.concat ", "
+                                    )
+                            )
+                            |> String.concat ", "
+                        )
+                        (
+                            match opt with
+                            | None -> ""
+                            | Some v ->
+                                v
+                                |> List.map (sprintf "ref: %i")
+                                |> String.concat ", "
+                        )
+                }
+            )
+
     let let_ =
         pipe2
             getPosition
@@ -723,6 +784,7 @@ type Parser() =
         funcTermRef.Value <- choice [
             func_ .>> funcEndLines
             let_ .>> endLines
+            if_ .>> ifEndLines
             opp.ExpressionParser
         ] .>> endLines
 

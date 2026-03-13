@@ -52,6 +52,26 @@ type FlatAST() =
         .>> spaces
         |>> box
     let arr_, arrRef = createParserForwardedToRef()
+    let opt_ =
+        pstring "opt"
+        .>>spaces
+        .>> pchar ':'
+        .>> spaces
+        >>. opt (
+            between
+                (spaces .>> pchar '[' .>> spaces)
+                (spaces .>> pchar ']' .>> spaces)
+                (sepBy1
+                    (choice [
+                        bool_
+                        str_
+                        ref_
+                        arr_
+                    ])
+                    (pchar ',' .>> spaces)
+                )
+        )
+        |>> box
     let program =
         between
             (spaces .>> pchar '[' .>> spaces)
@@ -62,6 +82,7 @@ type FlatAST() =
                     str_
                     ref_
                     arr_
+                    opt_
                 ])
                 (spaces .>> pchar ',' .>> spaces)
             )
