@@ -168,14 +168,15 @@ type Parser() =
                 >>. exprTerm
                 .>>. funcBlock funcTerm
                 .>> spaces
-                .>>. many (
+                .>>. opt (attempt (many (
                     pstring "else"
-                    .>> spaces
+                    .>> spaces1
                     .>> pstring "if"
+                    .>> spaces1
                     >>. exprTerm
                     .>>. funcBlock funcTerm
                     .>> spaces
-                )
+                )))
                 .>>. opt (
                     pstring "else"
                     .>> spaces
@@ -197,6 +198,9 @@ type Parser() =
                         )
                         (
                             s
+                            |> function
+                               | None -> []
+                               | Some lst -> lst
                             |> List.map (fun (e, content) ->
                                 sprintf
                                     "arr: [ref: %i, arr: [%s]]"

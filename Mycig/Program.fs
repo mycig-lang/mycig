@@ -8,15 +8,12 @@ package main
 
 import std::fmt
 
-frame Animal {
-    field Self {
-        *name: str
-        s: abs int
+func main() {
+    if 1 {
+        2
     }
-    impl Self {
-        pub func move(self) {
-            1
-        }
+    else {
+        3
     }
 }
 "
