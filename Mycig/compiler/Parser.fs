@@ -119,8 +119,6 @@ type Parser() =
             block1 funcTerm
             spaces >>. exprTerm |>> (fun x -> [x])
         ]
-
-    let opp = OperatorPrecedenceParser()
     
     let package_ =
         pipe2
@@ -294,7 +292,7 @@ type Parser() =
                             lst
                         )
                     )
-                .>>. opt (attempt (spaces >>. typp .>> spaces))
+                .>>. opt (attempt (spaces .>> pstring "->" .>> spaces >>. typp .>> spaces))
                 .>>. funcBlock1 funcTerm
                 .>> funcEndLines
             )
@@ -369,7 +367,7 @@ type Parser() =
                             lst
                         )
                     )
-                .>>. opt (attempt (spaces >>. typp .>> spaces))
+                .>>. opt (attempt (spaces .>> pstring "->" .>> spaces >>. typp .>> spaces))
                 .>>. funcBlock1 funcTerm
                 .>> funcEndLines
             )
@@ -629,45 +627,50 @@ type Parser() =
                     )
             }
         )
-    /// <summary>
-    /// Left: false
-    /// Right: true
-    /// </summary>
-    let oprators = [|
-        [|
-            "=", true
-        |]
-        [|
-            "||", false
-        |]
-        [|
-            "&&", false
-        |]
-        [|
-            "==", false
-            "!=", false
-            ">=", false
-            "<=", false
-            ">", false
-            "<", false
-        |]
-        [|
-            "+", false
-            "-", false
-        |]
-        [|
-            "*", false
-            "/", false
-        |]
-        [|
-            "**", true
-        |]
-        [|
-            ".", false
-        |]
-    |]
 
     do
+        /// <summary>
+        /// Left: false
+        /// Right: true
+        /// </summary>
+        let oprators = [|
+            [|
+                "=", true
+            |]
+            [|
+                "||", false
+            |]
+            [|
+                "&&", false
+            |]
+            [|
+                "==", false
+                "!=", false
+                ">=", false
+                "<=", false
+                ">", false
+                "<", false
+            |]
+            [|
+                "+", false
+                "-", false
+            |]
+            [|
+                "*", false
+                "/", false
+            |]
+            [|
+                "**", true
+            |]
+            [|
+                ".", false
+            |]
+        |]
+
+        let opp = OperatorPrecedenceParser()
+
+        let expr = opp.ExpressionParser
+
         opp.TermParser <- exprTerm
 
         let adjustPosition offset (pos: Position) =
@@ -696,6 +699,18 @@ type Parser() =
                     )
             )
         )
+
+        funcTermRef.Value <- choice [
+            func_ .>> funcEndLines
+            let_ .>> endLines
+            if_ .>> endLines
+            expr .>> endLines
+        ] .>> endLines
+
+        frameTermRef.Value <- choice [
+            field_ .>> fieldEndLines
+            impl_ .>> implEndLines
+        ]
 
         typRef.Value <-
             choice [
@@ -784,18 +799,6 @@ type Parser() =
                         }
                     )
                 ]
-
-        funcTermRef.Value <- choice [
-            func_ .>> funcEndLines
-            let_ .>> endLines
-            if_ .>> ifEndLines
-            opp.ExpressionParser
-        ] .>> endLines
-
-        frameTermRef.Value <- choice [
-            field_ .>> fieldEndLines
-            impl_ .>> implEndLines
-        ]
 
         exprTermref.Value <-
             choice [
@@ -959,43 +962,11 @@ type Parser() =
                 pipe2
                     getPosition
                     (
-                        pstring "chan"
-                        .>> spaces1
-                        >>. ident
-                        .>>. between
-                            (spaces .>> pchar '(')
-                            (pchar ')')
-                            (spaces >>. getPosition .>>. opt (attempt opp.ExpressionParser .>> spaces))
-                    )
-                    (fun pos (typ, (pos2, cap)) ->
-                        fast.add {
-                            Type = "chan"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf
-                                "[str: \"%s\", ref: %i]"
-                                typ
-                                (
-                                    match cap with
-                                    | Some cap -> cap
-                                    | None ->
-                                        fast.add {
-                                            Type = "operand_int32"
-                                            Line = pos2.Line
-                                            Column = pos2.Column
-                                            Data = sprintf "[str: \"1\"]"
-                                        }
-                                )
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (
-                        ident
+                        (sepBy1 ident (attempt (spaces .>> pstring "::" .>> spaces)))
                         .>>. between
                             (spaces .>> pchar '(')
                             (spaces .>> pchar ')')
-                            (sepBy (spaces >>. opp.ExpressionParser) (spaces .>> pchar ','))
+                            (sepBy (spaces >>. expr) (spaces .>> pchar ','))
                     )
                     (fun pos (name, args) ->
                         fast.add {
@@ -1004,7 +975,10 @@ type Parser() =
                             Column = pos.Column
                             Data = sprintf
                                 "[str: \"%s\", arr: [%s]]"
-                                name
+                                (
+                                    name
+                                    |> String.concat "::"
+                                )
                                 (
                                     args
                                     |> List.map (sprintf "ref: %i")
@@ -1012,7 +986,20 @@ type Parser() =
                                 )
                         }
                     )
-                //variable
+                (
+                    getPosition
+                    .>>. variable
+                    >>= (fun (pos, vName) ->
+                        if ss.content vName then
+                            fast.add {
+                                Type = "ref_var"
+                                Line = pos.Line
+                                Column = pos.Column
+                                Data = sprintf "[str: \"%s\"]" vName
+                            } |> preturn
+                        else fail <| sprintf "variable '%s' does not exist." vName
+                    )
+                )
                 pipe2
                     getPosition
                     ident
@@ -1026,7 +1013,7 @@ type Parser() =
                     )
                 pipe2
                     getPosition
-                    (between (pchar '(' .>> spaces) (spaces .>> pchar ')') opp.ExpressionParser)
+                    (between (pchar '(' .>> spaces) (spaces .>> pchar ')') expr)
                     (fun pos expr ->
                         fast.add {
                             Type = "paren"

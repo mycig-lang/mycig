@@ -8,13 +8,12 @@ package main
 
 import std::fmt
 
+func f(i) {
+    1 * 2
+}
+
 func main() {
-    if 1 {
-        2
-    }
-    else {
-        3
-    }
+    1 * 2
 }
 "
     p.run code |> printfn "%i\n"

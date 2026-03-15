@@ -24,3 +24,8 @@ type SimpleScope() =
             |> Array.contains s
             |> not
         then scope[len] <- scope[len] |> Array.append [|s|]
+
+    member _.content (s: string) =
+        scope
+        |> Array.concat
+        |> Array.contains s
