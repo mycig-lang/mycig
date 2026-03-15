@@ -1,0 +1,5 @@
+status {
+	Trade,
+	Supply,
+	EOD // End of Deal
+}

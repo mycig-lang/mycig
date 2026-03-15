@@ -6,6 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="script\mycig.mgvs">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="docs\fop.md" />
     <None Include="memm\Frame.fs" />
     <None Include="files\ReadFile.fs" />
@@ -19,6 +22,7 @@
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
     <Compile Include="compiler\Parser.fs" />
+    <Compile Include="MycigVerificationScript.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
