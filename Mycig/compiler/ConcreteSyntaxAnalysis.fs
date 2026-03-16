@@ -13,16 +13,27 @@ type PLResult =
             sprintf "Failure!: %s" err
             
 
-type CSAParser = string * string list -> PLResult
+type CSAParser = PLResult -> PLResult
 
 [<AutoOpen>]
 module CSAParserLib =
     let lstr s =
-        fun (code, result) ->
+        function
+        | Success(code, result) ->
             if code.StartsWith (s: string)
             then
                 Success(code[s.Length..], result@[s])
             else
                 Failure("")
+        | plresult -> plresult
         : CSAParser
-    let lrun p code = (p: CSAParser) (code, [])
+
+    let lrun p code = (p: CSAParser) (Success(code, []))
+
+    let (--) p1 p2 =
+        (p1 : CSAParser)
+        >> function
+            | Success(code, result) -> Success(code.TrimStart ' ', result)
+            | plresult -> plresult
+        >> p2
+        : CSAParser

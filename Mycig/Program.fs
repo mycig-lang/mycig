@@ -21,6 +21,6 @@ let main _ =
 //"
 //    p.run code |> printfn "%i\n"
 //    p.getFlatAST() |> printfn "%A"
-    let abc = lstr "abc"
+    let abc = lstr "abc" -- lstr "def"
     lrun abc "abc" |> printfn "%A"
     0
