@@ -30,10 +30,21 @@ module CSAParserLib =
 
     let lrun p code = (p: CSAParser) (Success(code, []))
 
-    let (--) p1 p2 =
+    let (>*) p1 p2 =
         (p1 : CSAParser)
         >> function
             | Success(code, result) -> Success(code.TrimStart ' ', result)
+            | plresult -> plresult
+        >> p2
+        : CSAParser
+
+    let (>+) p1 p2 =
+        (p1 : CSAParser)
+        >> function
+            | Success(code, result) ->
+                if code[0] = ' '
+                then Success(code.TrimStart ' ', result)
+                else Failure("")
             | plresult -> plresult
         >> p2
         : CSAParser
