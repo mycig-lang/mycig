@@ -1042,7 +1042,7 @@ type Parser() =
                 ]
                 .>> spaces
 
-    member _.run (s: string): int =
+    member __.run (s: string): int =
         let s = s.Replace("\r", "")
         #if DEBUG
         printfn "parse: %A\n" s
@@ -1053,4 +1053,4 @@ type Parser() =
             eprintfn "%s" error
             -1
 
-    member _.getFlatAST() = fast
+    member __.getFlatAST() = fast

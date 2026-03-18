@@ -15,16 +15,17 @@ type PLResult =
 
 type CSAParser = PLResult -> PLResult
 
+type CSAParserBuilder() =
+    class end
+
 [<AutoOpen>]
 module CSAParserLib =
     let lstr s =
         function
         | Success(code, result) ->
             if code.StartsWith (s: string)
-            then
-                Success(code[s.Length..], result@[s])
-            else
-                Failure("")
+            then Success(code[s.Length..], result@[s])
+            else Failure("")
         | plresult -> plresult
         : CSAParser
 
