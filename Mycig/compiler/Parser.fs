@@ -804,10 +804,10 @@ type Parser() =
             choice [
                 pipe2
                     getPosition
-                    (pint32 .>> opt (attempt (pchar 'l')))
+                    (pint8 .>> pstring "i8")
                     (fun pos value ->
                         fast.add {
-                            Type = "operand_int32"
+                            Type = "operand_i8"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%i\"]" value
@@ -815,10 +815,43 @@ type Parser() =
                     )
                 pipe2
                     getPosition
-                    (pfloat .>> (pchar 'f' <|> pchar 'F'))
+                    (pint16 .>> pstring "i16")
                     (fun pos value ->
                         fast.add {
-                            Type = "operand_float"
+                            Type = "operand_i16"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+                pipe2
+                    getPosition
+                    (pint32 .>> opt (attempt (pstring "i32")))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_i32"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+                pipe2
+                    getPosition
+                    (pint64 .>> attempt (pstring "i64"))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_i64"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+                pipe2
+                    getPosition
+                    (pfloat .>> pstring "f64")
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_f64"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%f\"]" value
@@ -826,10 +859,10 @@ type Parser() =
                     )
                 pipe2
                     getPosition
-                    (pint64 .>> attempt (pchar 'L'))
+                    (puint8 .>> pstring "u8")
                     (fun pos value ->
                         fast.add {
-                            Type = "operand_int64"
+                            Type = "operand_u8"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%i\"]" value
@@ -837,10 +870,10 @@ type Parser() =
                     )
                 pipe2
                     getPosition
-                    (puint32 .>> pchar 'u')
+                    (puint16 .>> pstring "u16")
                     (fun pos value ->
                         fast.add {
-                            Type = "operand_uint32"
+                            Type = "operand_u16"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%i\"]" value
@@ -848,10 +881,10 @@ type Parser() =
                     )
                 pipe2
                     getPosition
-                    (puint64 .>> pstring "UL")
+                    (puint32 .>> pstring "u32")
                     (fun pos value ->
                         fast.add {
-                            Type = "operand_uint64"
+                            Type = "operand_u32"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%i\"]" value
@@ -859,43 +892,10 @@ type Parser() =
                     )
                 pipe2
                     getPosition
-                    (pint16 .>> pchar 's')
+                    (puint64 .>> pstring "u64")
                     (fun pos value ->
                         fast.add {
-                            Type = "operand_int16"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf "[str: \"%i\"]" value
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (puint16 .>> pstring "us")
-                    (fun pos value ->
-                        fast.add {
-                            Type = "operand_uint16"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf "[str: \"%i\"]" value
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (pint8 .>> pchar 'y')
-                    (fun pos value ->
-                        fast.add {
-                            Type = "operand_int8"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf "[str: \"%i\"]" value
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (puint8 .>> pstring "uy")
-                    (fun pos value ->
-                        fast.add {
-                            Type = "operand_uint8"
+                            Type = "operand_u64"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%i\"]" value
@@ -959,6 +959,20 @@ type Parser() =
                                 )
                         }
                     )
+                (
+                    getPosition
+                    .>>. variable
+                    >>= (fun (pos, vName) ->
+                        if ss.content vName then
+                            fast.add {
+                                Type = "ref_var"
+                                Line = pos.Line
+                                Column = pos.Column
+                                Data = sprintf "[str: \"%s\"]" vName
+                            } |> preturn
+                        else fail <| sprintf "variable '%s' does not exist." vName
+                    )
+                )
                 pipe2
                     getPosition
                     (
@@ -986,20 +1000,6 @@ type Parser() =
                                 )
                         }
                     )
-                (
-                    getPosition
-                    .>>. variable
-                    >>= (fun (pos, vName) ->
-                        if ss.content vName then
-                            fast.add {
-                                Type = "ref_var"
-                                Line = pos.Line
-                                Column = pos.Column
-                                Data = sprintf "[str: \"%s\"]" vName
-                            } |> preturn
-                        else fail <| sprintf "variable '%s' does not exist." vName
-                    )
-                )
                 pipe2
                     getPosition
                     ident
