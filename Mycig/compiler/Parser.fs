@@ -804,6 +804,17 @@ type Parser() =
             choice [
                 pipe2
                     getPosition
+                    (pint32 .>> opt (attempt (pstring "i32")))
+                    (fun pos value ->
+                        fast.add {
+                            Type = "operand_i32"
+                            Line = pos.Line
+                            Column = pos.Column
+                            Data = sprintf "[str: \"%i\"]" value
+                        }
+                    )
+                pipe2
+                    getPosition
                     (pint8 .>> pstring "i8")
                     (fun pos value ->
                         fast.add {
@@ -819,17 +830,6 @@ type Parser() =
                     (fun pos value ->
                         fast.add {
                             Type = "operand_i16"
-                            Line = pos.Line
-                            Column = pos.Column
-                            Data = sprintf "[str: \"%i\"]" value
-                        }
-                    )
-                pipe2
-                    getPosition
-                    (pint32 .>> opt (attempt (pstring "i32")))
-                    (fun pos value ->
-                        fast.add {
-                            Type = "operand_i32"
                             Line = pos.Line
                             Column = pos.Column
                             Data = sprintf "[str: \"%i\"]" value

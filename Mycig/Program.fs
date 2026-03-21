@@ -10,8 +10,8 @@ package main
 
 import std::fmt
 
-func f() {
-    i * 2
+func f(i) {
+    i * 2i8
 }
 
 func main() {

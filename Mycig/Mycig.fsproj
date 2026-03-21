@@ -16,7 +16,6 @@
 
   <ItemGroup>
     <Compile Include="files\ReadFile.fs" />
-    <Compile Include="compiler\ConcreteSyntaxAnalysis.fs" />
     <None Include="compiler\README.md" />
     <Compile Include="compiler\FlatAST.fs" />
     <Compile Include="compiler\TypeInference.fs" />
