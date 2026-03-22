@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="CODEX.md" />
     <None Include="script\mycig.mgvs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

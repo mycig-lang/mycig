@@ -29,6 +29,7 @@ type private FunctionInfo = {
     ExplicitReturn: InferredType
     Body: int list
     SelfType: InferredType option
+    IsAbstract: bool
 }
 
 type TypeInference(fast: FlatAST) =
@@ -156,7 +157,7 @@ type TypeInference(fast: FlatAST) =
             name, inferredType
         )
 
-    let collectFunction name explicitReturn parameters body selfType =
+    let collectFunction name explicitReturn parameters body selfType isAbstract =
         let info = {
             Name = name
             QualifiedName = makeQualifiedName selfType name
@@ -164,6 +165,7 @@ type TypeInference(fast: FlatAST) =
             ExplicitReturn = explicitReturn
             Body = body
             SelfType = selfType
+            IsAbstract = isAbstract
         }
 
         functionsByName <- functionsByName |> Map.add name info
@@ -189,6 +191,7 @@ type TypeInference(fast: FlatAST) =
                     (parseParameters None parameters)
                     (body |> getObjList |> List.map getInt)
                     None
+                    false
             | "operand_func", [ parameters; retRef; _body ] ->
                 collectFunction
                     (sprintf "@lambda_%d" index)
@@ -200,7 +203,8 @@ type TypeInference(fast: FlatAST) =
                     )
                     []
                     None
-            | "impl", [ frameName; members ] ->
+                    false
+            | "impl", [ _modi; frameName; members ] ->
                 let selfType = TNamed(getString frameName)
 
                 members
@@ -218,6 +222,7 @@ type TypeInference(fast: FlatAST) =
                             (parseParameters (Some selfType) parameters)
                             (body |> getObjList |> List.map getInt)
                             (Some selfType)
+                            false
                     | "init", [ _isPub; _name; parameters; _body ] ->
                         collectFunction
                             "init"
@@ -225,6 +230,36 @@ type TypeInference(fast: FlatAST) =
                             (parseParameters (Some selfType) parameters)
                             []
                             (Some selfType)
+                            false
+                    | _ -> ()
+                )
+            | "impl_abs", [ frameName; members ] ->
+                let selfType = TNamed(getString frameName)
+
+                members
+                |> getObjList
+                |> List.map getInt
+                |> List.iter (fun memberRef ->
+                    let memberNode = getNode memberRef
+                    let memberData = getData memberRef
+
+                    match memberNode.Type, memberData with
+                    | "func_impl_abs", [ name; retRef; parameters; body ] ->
+                        collectFunction
+                            (getString name)
+                            (resolveTypeRefInner (Some selfType) (getInt retRef))
+                            (parseParameters (Some selfType) parameters)
+                            (body |> getObjList |> List.map getInt)
+                            (Some selfType)
+                            true
+                    | "init_abs", [ _name; parameters; _body ] ->
+                        collectFunction
+                            "init"
+                            selfType
+                            (parseParameters (Some selfType) parameters)
+                            []
+                            (Some selfType)
+                            true
                     | _ -> ()
                 )
             | _ -> ()
@@ -236,6 +271,7 @@ type TypeInference(fast: FlatAST) =
         match Map.tryFind cacheKey functionReturnCache with
         | Some cached -> cached
         | None when functionInferenceStack.Contains cacheKey -> info.ExplicitReturn
+        | None when info.IsAbstract -> info.ExplicitReturn
         | None ->
             functionInferenceStack <- functionInferenceStack.Add cacheKey
 
@@ -255,14 +291,21 @@ type TypeInference(fast: FlatAST) =
 
     and inferBinaryOperator op left right =
         match op with
+        | "=" -> mergeTypes left right
         | "==" | "!=" | "<" | ">" | "<=" | ">=" ->
             let _ = mergeTypes left right
             boolType
         | "&&" | "||" -> boolType
+        | "." -> right
         | "+" | "-" | "*" | "/" | "%" -> mergeTypes left right
+        | "**" ->
+            match left, right with
+            | TNamed "f64", _
+            | _, TNamed "f64" -> TNamed "f64"
+            | _ -> mergeTypes left right
         | _ -> mergeTypes left right
 
-    and inferCall name argTypes =
+    and inferCall (name: string) (argTypes: InferredType list) =
         let functionInfo =
             match Map.tryFind name functionsByQualifiedName with
             | Some info -> Some info
@@ -275,7 +318,7 @@ type TypeInference(fast: FlatAST) =
         | Some info ->
             let parameterTypes = info.Parameters |> List.map snd
             let _ =
-                List.zip parameterTypes argTypes
+                List.zip (parameterTypes |> List.truncate argTypes.Length) (argTypes |> List.truncate parameterTypes.Length)
                 |> List.map (fun (expected, actual) -> mergeTypes expected actual)
 
             inferFunctionReturn info
@@ -305,6 +348,168 @@ type TypeInference(fast: FlatAST) =
         | _ ->
             inferNodeInner nodeRef environment selfType, environment
 
+    and inferStatementType nodeRef environment selfType =
+        inferStatement nodeRef environment selfType |> fst
+
+    and tryInferInSequence target refs environment selfType =
+        let rec loop env = function
+            | [] -> None
+            | nodeRef :: rest ->
+                match tryInferInsideNode target nodeRef env selfType with
+                | Some inferred -> Some inferred
+                | None ->
+                    let _, nextEnv = inferStatement nodeRef env selfType
+                    loop nextEnv rest
+
+        loop environment refs
+
+    and tryInferInitBody target entries environment selfType =
+        entries
+        |> List.map getObjList
+        |> List.choose (function
+            | _isRepo :: _name :: exprRef :: _ -> Some(getInt exprRef)
+            | _ -> None
+        )
+        |> List.tryPick (fun exprRef -> tryInferInsideNode target exprRef environment selfType)
+
+    and tryInferInsideNode target nodeRef environment selfType =
+        let node = getNode nodeRef
+        let data = getData nodeRef
+
+        if nodeRef = target then
+            Some(inferStatementType nodeRef environment selfType)
+        else
+            match node.Type, data with
+            | "type", [ child ]
+            | "paren", [ child ] ->
+                tryInferInsideNode target (getInt child) environment selfType
+            | "call_func", [ _name; args ] ->
+                args
+                |> getObjList
+                |> List.map getInt
+                |> List.tryPick (fun arg -> tryInferInsideNode target arg environment selfType)
+            | "block", [ content ] ->
+                tryInferInSequence target (content |> getObjList |> List.map getInt) environment selfType
+            | "let", [ _isMut; _isRepo; _name; _typRef; content ] ->
+                tryInferInSequence target (content |> getObjList |> List.map getInt) environment selfType
+            | "if", [ cond; thenBody; elseIfs; elseBody ] ->
+                match tryInferInsideNode target (getInt cond) environment selfType with
+                | Some inferred -> Some inferred
+                | None ->
+                    match tryInferInSequence target (thenBody |> getObjList |> List.map getInt) environment selfType with
+                    | Some inferred -> Some inferred
+                    | None ->
+                        let elseIfMatch =
+                            elseIfs
+                            |> getObjList
+                            |> List.map getObjList
+                            |> List.tryPick (function
+                                | elseifCond :: elseifBody :: _ ->
+                                    match tryInferInsideNode target (getInt elseifCond) environment selfType with
+                                    | Some inferred -> Some inferred
+                                    | None ->
+                                        tryInferInSequence target (elseifBody |> getObjList |> List.map getInt) environment selfType
+                                | _ -> None
+                            )
+
+                        match elseIfMatch with
+                        | Some inferred -> Some inferred
+                        | None ->
+                            tryInferInSequence target (getOptList elseBody |> List.map getInt) environment selfType
+            | _ when node.Type.StartsWith("operator_") ->
+                match data with
+                | [ left; right ] ->
+                    tryInferInsideNode target (getInt left) environment selfType
+                    |> Option.orElseWith (fun () -> tryInferInsideNode target (getInt right) environment selfType)
+                | _ -> None
+            | "func", [ _isPub; _name; _retRef; parameters; body ] ->
+                let functionEnv = parameters |> parseParameters None |> Map.ofList
+                tryInferInSequence target (body |> getObjList |> List.map getInt) functionEnv None
+            | "func_impl", [ _modi; _name; _retRef; parameters; body ] ->
+                let functionEnv =
+                    parameters
+                    |> parseParameters selfType
+                    |> Map.ofList
+                    |> fun env ->
+                        match selfType with
+                        | Some self -> env |> Map.add "self" self
+                        | None -> env
+
+                tryInferInSequence target (body |> getObjList |> List.map getInt) functionEnv selfType
+            | "func_impl_abs", [ _name; _retRef; parameters; body ] ->
+                let functionEnv =
+                    parameters
+                    |> parseParameters selfType
+                    |> Map.ofList
+                    |> fun env ->
+                        match selfType with
+                        | Some self -> env |> Map.add "self" self
+                        | None -> env
+
+                tryInferInSequence target (body |> getObjList |> List.map getInt) functionEnv selfType
+            | "operand_func", [ parameters; _retRef; body ] ->
+                let lambdaEnv =
+                    parameters
+                    |> getObjList
+                    |> List.mapi (fun i arg -> sprintf "arg%d" i, resolveTypeRefInner selfType (getInt arg))
+                    |> Map.ofList
+
+                tryInferInSequence target (body |> getObjList |> List.map getInt) lambdaEnv selfType
+            | "init", [ _isPub; _name; parameters; content ] ->
+                let initEnv =
+                    parameters
+                    |> parseParameters selfType
+                    |> Map.ofList
+                    |> fun env ->
+                        match selfType with
+                        | Some self -> env |> Map.add "self" self
+                        | None -> env
+
+                tryInferInitBody target (content |> getObjList) initEnv selfType
+            | "init_abs", [ _name; parameters; content ] ->
+                let initEnv =
+                    parameters
+                    |> parseParameters selfType
+                    |> Map.ofList
+                    |> fun env ->
+                        match selfType with
+                        | Some self -> env |> Map.add "self" self
+                        | None -> env
+
+                tryInferInitBody target (content |> getObjList) initEnv selfType
+            | "impl", [ _modi; frameName; members ] ->
+                let implSelf = Some(TNamed(getString frameName))
+                members
+                |> getObjList
+                |> List.map getInt
+                |> List.tryPick (fun memberRef -> tryInferInsideNode target memberRef environment implSelf)
+            | "impl_abs", [ frameName; members ] ->
+                let implSelf = Some(TNamed(getString frameName))
+                members
+                |> getObjList
+                |> List.map getInt
+                |> List.tryPick (fun memberRef -> tryInferInsideNode target memberRef environment implSelf)
+            | "frame", [ _isPub; _name; _bases; content ] ->
+                content
+                |> getObjList
+                |> List.map getInt
+                |> List.tryPick (fun memberRef -> tryInferInsideNode target memberRef environment selfType)
+            | "program", [ packageRef; imports; body ] ->
+                tryInferInsideNode target (getInt packageRef) environment selfType
+                |> Option.orElseWith (fun () ->
+                    imports
+                    |> getObjList
+                    |> List.map getInt
+                    |> List.tryPick (fun importRef -> tryInferInsideNode target importRef environment selfType)
+                )
+                |> Option.orElseWith (fun () ->
+                    body
+                    |> getObjList
+                    |> List.map getInt
+                    |> List.tryPick (fun bodyRef -> tryInferInsideNode target bodyRef environment selfType)
+                )
+            | _ -> None
+
     and inferNodeInner nodeRef environment selfType =
         match Map.tryFind nodeRef nodeTypeCache with
         | Some cached -> cached
@@ -325,6 +530,13 @@ type TypeInference(fast: FlatAST) =
                 | "operand_f64", _ -> TNamed "f64"
                 | "operand_string", _ -> TNamed "string"
                 | "operand_char", _ -> TNamed "char"
+                | "program", _ -> unitType
+                | "package", _ -> unitType
+                | "import", _ -> unitType
+                | "frame", _ -> unitType
+                | "field", _ -> unitType
+                | "impl", _ -> unitType
+                | "impl_abs", _ -> unitType
                 | "ref_var", [ name ] ->
                     Map.tryFind (getString name) environment |> Option.defaultValue TUnknown
                 | "ident", [ name ] ->
@@ -407,7 +619,13 @@ type TypeInference(fast: FlatAST) =
                     match selfType with
                     | Some(TNamed selfName) -> inferCall (sprintf "%s::%s" selfName (getString name)) []
                     | _ -> inferCall (getString name) []
+                | "func_impl_abs", [ name; _retRef; _parameters; _body ] ->
+                    match selfType with
+                    | Some(TNamed selfName) -> inferCall (sprintf "%s::%s" selfName (getString name)) []
+                    | _ -> inferCall (getString name) []
                 | "init", _ ->
+                    selfType |> Option.defaultValue TUnknown
+                | "init_abs", _ ->
                     selfType |> Option.defaultValue TUnknown
                 | _ -> TUnknown
 
@@ -438,7 +656,18 @@ type TypeInference(fast: FlatAST) =
         resolveTypeRefInner None typeRef
 
     member this.inferNode(nodeRef: int) =
-        inferNodeInner nodeRef Map.empty None
+        nodeTypeCache <- Map.empty
+
+        let inferredFromContext =
+            flatAST
+            |> Array.tryPick (fun (index, node) ->
+                if node.Type = "program" then
+                    tryInferInsideNode nodeRef index Map.empty None
+                else
+                    None
+            )
+
+        inferredFromContext |> Option.defaultWith (fun () -> inferNodeInner nodeRef Map.empty None)
 
     member this.inferFunction(name: string) =
         let info =
@@ -449,5 +678,6 @@ type TypeInference(fast: FlatAST) =
         info |> Option.map inferFunctionReturn
 
     member this.inferAll() =
+        nodeTypeCache <- Map.empty
         flatAST
         |> Array.map (fun (index, node) -> index, node.Type, this.inferNode index)

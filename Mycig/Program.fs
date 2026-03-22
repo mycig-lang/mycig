@@ -4,18 +4,18 @@ open Mycig
 
 [<EntryPoint>]
 let main _ =
+    let p = pint32
+    run p "-1" |> printfn "%A"
+    
     let p = Parser()
     let code = @"
 package main
 
 import std::fmt
 
-func f(i) {
-    i * 2
-}
-
 func main() {
-    1 * 2
+    let a = 1i8
+    a
 }
 "
     p.run code |> printfn "%i\n"
@@ -24,4 +24,6 @@ func main() {
 
     let ti = TypeInference(fast)
     ti.init()
+    ti.inferNode(3) |> printfn "%A"
+    
     0

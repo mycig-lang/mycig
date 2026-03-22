@@ -9,4 +9,4 @@ module ParserModule =
     let frameEndLines: Parser<char list, unit> = many newline
     let implEndLines: Parser<char list, unit> = many newline
     let fieldEndLines: Parser<char list, unit> = many newline
-    let ident: Parser<string, unit> = regex @"[\p{L}_][\p{L}\p{N}_]*"
+    let ident: Parser<string, unit> = regex "[\w_][\w\d_]*(::[\w_][\w\d_]*)*"

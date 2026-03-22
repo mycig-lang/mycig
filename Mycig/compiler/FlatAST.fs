@@ -21,7 +21,7 @@ type FASTResult<'T, 'E> =
 
 type FlatAST() =
     let ident =
-        regex @"[\p{L}_][\p{L}\p{N}_]*"
+        attempt (regex "[\w_][\w\d_]*(::[\w_][\w\d_]*)*")
     let bool_ =
         pstring "bool"
         .>> spaces
@@ -40,7 +40,7 @@ type FlatAST() =
         >>. between
             (spaces .>> pchar '"')
             (pchar '"' .>> spaces)
-            (many ident)
+            ident
         .>> spaces
         |>> box
     let ref_ =
@@ -61,7 +61,7 @@ type FlatAST() =
             between
                 (spaces .>> pchar '[' .>> spaces)
                 (spaces .>> pchar ']' .>> spaces)
-                (sepBy1
+                (sepBy
                     (choice [
                         bool_
                         str_
@@ -101,6 +101,7 @@ type FlatAST() =
                         bool_
                         str_
                         ref_
+                        opt_
                         arr_
                     ])
                     (pchar ',' .>> spaces)
