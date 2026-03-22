@@ -11,7 +11,7 @@ package main
 import std::fmt
 
 func f(i) {
-    i * 2i8
+    i * 2
 }
 
 func main() {
@@ -19,6 +19,9 @@ func main() {
 }
 "
     p.run code |> printfn "%i\n"
-    p.getFlatAST() |> printfn "%A"
-    
+    let fast = p.getFlatAST()
+    fast |> printfn "%A"
+
+    let ti = TypeInference(fast)
+    ti.init()
     0

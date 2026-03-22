@@ -40,7 +40,7 @@ type FlatAST() =
         >>. between
             (spaces .>> pchar '"')
             (pchar '"' .>> spaces)
-            ident
+            (many ident)
         .>> spaces
         |>> box
     let ref_ =
