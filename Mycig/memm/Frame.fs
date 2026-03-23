@@ -1,4 +1,5 @@
 namespace Aegith.GuaranteeSystem
 
 type Structure() =
-    class end
+    class
+    end

@@ -2,12 +2,11 @@ namespace Mycig.Compiler
 
 open FParsec
 
-type ASTNode = {
-    Type: string;
-    Line: int64
-    Column: int64
-    mutable Data: string
-}
+type ASTNode =
+    { Type: string
+      Line: int64
+      Column: int64
+      mutable Data: string }
 
 exception FASTParseException of string
 
@@ -20,128 +19,93 @@ type FASTResult<'T, 'E> =
         | Err _ -> failwith "FASTResult.unwrap() ->! It's Not FASTRsult.Ok."
 
 type FlatAST() =
-    let ident =
-        attempt (regex "[\w_][\w\d_]*(::[\w_][\w\d_]*)*")
+    let ident = attempt (regex "[\w_][\w\d_]*(::[\w_][\w\d_]*)*")
+
     let bool_ =
-        pstring "bool"
-        .>> spaces
-        .>> pchar ':'
-        .>> spaces
-        >>. choice [
-            attempt (stringReturn "true" true)
-            stringReturn "false" false
-        ]
+        pstring "bool" .>> spaces .>> pchar ':' .>> spaces
+        >>. choice [ attempt (stringReturn "true" true)
+                     stringReturn "false" false ]
         .>> spaces
         |>> box
+
     let str_ =
-        pstring "str"
-        .>> spaces
-        .>> pchar ':'
-        >>. between
-            (spaces .>> pchar '"')
-            (pchar '"' .>> spaces)
-            ident
+        pstring "str" .>> spaces .>> pchar ':'
+        >>. between (spaces .>> pchar '"') (pchar '"' .>> spaces) (manyChars (noneOf "\""))
         .>> spaces
         |>> box
+
     let ref_ =
-        pstring "ref"
-        .>> spaces
-        .>> pchar ':'
-        .>> spaces
+        pstring "ref" .>> spaces .>> pchar ':' .>> spaces
         >>. pint32
         .>> spaces
         |>> box
-    let arr_, arrRef = createParserForwardedToRef()
+
+    let arr_, arrRef = createParserForwardedToRef ()
+
     let opt_ =
-        pstring "opt"
-        .>>spaces
-        .>> pchar ':'
-        .>> spaces
+        pstring "opt" .>> spaces .>> pchar ':' .>> spaces
         >>. opt (
             between
                 (spaces .>> pchar '[' .>> spaces)
                 (spaces .>> pchar ']' .>> spaces)
-                (sepBy
-                    (choice [
-                        bool_
-                        str_
-                        ref_
-                        arr_
-                    ])
-                    (pchar ',' .>> spaces)
-                )
+                (sepBy (choice [ bool_; str_; ref_; arr_ ]) (pchar ',' .>> spaces))
         )
         |>> box
+
     let program =
         between
             (spaces .>> pchar '[' .>> spaces)
             (pchar ']' .>> spaces)
-            (sepBy
-                (choice [
-                    bool_
-                    str_
-                    ref_
-                    arr_
-                    opt_
-                ])
-                (spaces .>> pchar ',' .>> spaces)
-            )
+            (sepBy (choice [ bool_; str_; ref_; arr_; opt_ ]) (spaces .>> pchar ',' .>> spaces))
         .>> eof
 
     do
         arrRef.Value <-
-            pstring "arr"
-            .>> spaces
-            .>> pchar ':'
+            pstring "arr" .>> spaces .>> pchar ':'
             >>. between
-                (spaces .>> pchar '[' .>> spaces)
-                (spaces .>> pchar ']' .>> spaces)
-                (sepBy
-                    (choice [
-                        bool_
-                        str_
-                        ref_
-                        opt_
-                        arr_
-                    ])
-                    (pchar ',' .>> spaces)
-                )
+                    (spaces .>> pchar '[' .>> spaces)
+                    (spaces .>> pchar ']' .>> spaces)
+                    (sepBy (choice [ bool_; str_; ref_; opt_; arr_ ]) (pchar ',' .>> spaces))
             .>> spaces
             |>> box
 
     member val private AST = [||] with get, set
     member val private Data = [||] with get, set
 
-    override this.ToString (): string = 
-        sprintf "FlatAST:\n%s\n\n" (this.AST |> Array.mapi (sprintf "[ %i ]: %A\n") |> String.concat "\n")
+    override this.ToString() : string =
+        sprintf
+            "FlatAST:\n%s\n\n"
+            (this.AST
+             |> Array.mapi (sprintf "[ %i ]: %A\n")
+             |> String.concat "\n")
 
     member this.add(ast) =
-        this.AST <- [|ast|] |> Array.append this.AST
+        this.AST <- [| ast |] |> Array.append this.AST
         this.AST.Length - 1
 
     member this.initData() =
         this.Data <-
             this.AST
-            |> Array.map
-                (fun ast ->
-                    match run program ast.Data with
-                    | Success(res, _, _) -> res
-                    | Failure(msg, _, _) -> failwith <| sprintf "FlatAST.Data ->! Failured Parse.\n%s" msg
-                )
+            |> Array.map (fun ast ->
+                match run program ast.Data with
+                | Success (res, _, _) -> res
+                | Failure (msg, _, _) ->
+                    failwith
+                    <| sprintf "FlatAST.Data ->! Failured Parse.\n%s" msg)
 
-    member this.getAST() =
-        this.AST
+    member this.getAST() = this.AST
 
     member this.getAST i =
-        if i < 0 || this.AST.Length <= i
-        then Err("FlatAST.Ast ->! Index Out Of Range.")
-        else Ok(this.AST[i])
+        if i < 0 || this.AST.Length <= i then
+            Err("FlatAST.Ast ->! Index Out Of Range.")
+        else
+            Ok(this.AST[i])
 
-    member this.getData() =
-        this.Data
+    member this.getData() = this.Data
 
     member this.getData i =
-        if i < 0 || this.Data.Length <= i
-        then Err("FlatAST.Data ->! Index Out Of Range.")
-        else Ok(this.Data[i])
-    // TODO
+        if i < 0 || this.Data.Length <= i then
+            Err("FlatAST.Data ->! Index Out Of Range.")
+        else
+            Ok(this.Data[i])
+// TODO
