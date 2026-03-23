@@ -407,79 +407,6 @@ type Parser() =
                         )
                 }
             )
-    let func_impl_abs =
-        pipe2
-            getPosition
-            (
-                pstring "abs"
-                .>> spaces1
-                .>> pstring "func"
-                .>> spaces1
-                >>. ident
-                .>>. between
-                    (spaces .>> pchar '(')
-                    (spaces .>> pchar ')')
-                    (
-                        sepBy
-                            (
-                                spaces
-                                >>. opt (attempt (stringReturn "*" 0uy))
-                                .>>. ident
-                                .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
-                            )
-                            (spaces .>> pchar ',')
-                        |>> (fun lst ->
-                            ss.createScope()
-                            lst
-                            |> List.iter (fun ((_, name), _) ->
-                                ss.add name
-                            )
-                            lst
-                        )
-                    )
-                .>>. opt (attempt (spaces .>> pstring "->" .>> spaces >>. typp .>> spaces))
-                .>>. funcBlock1 funcTerm
-                .>> funcEndLines
-            )
-            (fun pos (((name, args), rettyp), content) ->
-                ss.deleteScope()
-                fast.add {
-                    Type = "func_impl_abs"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf
-                        "[str: \"%s\", ref: %i, arr: [%s], arr: [%s]]"
-                        name
-                        (
-                            match rettyp with
-                            | Some typ -> typ
-                            | None -> -1
-                        )
-                        (
-                            args
-                            |> List.map (fun ((idt, f), s) ->
-                                sprintf
-                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
-                                    (
-                                        match idt with
-                                        | Some _ -> true
-                                        | None -> false
-                                    )
-                                    f
-                                    (
-                                        match s with
-                                        | Some i -> i
-                                        | None -> -1
-                                    )
-                            ) |> String.concat ", "
-                        )
-                        (
-                            content
-                            |> List.map (sprintf "ref: %i")
-                            |> String .concat ", "
-                        )
-                }
-            )
     let initf =
         pipe2
             getPosition
@@ -551,6 +478,59 @@ type Parser() =
                         )
                 }
             )
+    let func_impl_abs =
+        pipe2
+            getPosition
+            (
+                pstring "abs"
+                .>> spaces1
+                .>> pstring "func"
+                .>> spaces1
+                >>. ident
+                .>>. between
+                    (spaces .>> pchar '(')
+                    (spaces .>> pchar ')')
+                    (
+                        sepBy
+                            (
+                                spaces
+                                >>. ident
+                                .>>. (spaces .>> pchar ':' .>> spaces >>. typp)
+                            )
+                            (spaces .>> pchar ',')
+                        |>> (fun lst ->
+                            ss.createScope()
+                            lst
+                            |> List.iter (fun (name, _) ->
+                                ss.add name
+                            )
+                            lst
+                        )
+                    )
+                .>>. (spaces .>> pstring "->" .>> spaces >>. typp .>> spaces)
+                .>> funcEndLines
+            )
+            (fun pos ((name, args), rettyp) ->
+                ss.deleteScope()
+                fast.add {
+                    Type = "func_impl_abs"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[str: \"%s\", ref: %i, arr: [%s]]"
+                        name
+                        rettyp
+                        (
+                            args
+                            |> List.map (fun (f, s) ->
+                                sprintf
+                                    "arr: [str: \"%s\", ref: %i]"
+                                    f
+                                    s
+                            ) |> String.concat ", "
+                        )
+                }
+            )
     let initf_abs =
         pipe2
             getPosition
@@ -562,70 +542,128 @@ type Parser() =
                     (sepBy
                         (
                             spaces
-                            >>. opt (attempt (stringReturn "*" 0uy))
-                            .>>. ident
-                            .>>. opt (attempt (spaces .>> pchar ':' .>> spaces >>. typp))
+                            >>. ident
+                            .>>. (spaces .>> pchar ':' .>> spaces >>. typp)
                         )
                         (spaces .>> pchar ',')
                     )
-                .>>. funcBlock (
-                    (opt (attempt (stringReturn "*" true .>> spaces)))
-                    .>>. ident
-                    .>> (spaces .>> pchar ':' .>> spaces)
-                    .>>. exprTerm
-                    .>> (spaces .>> endLines .>> spaces)
-                )
                 .>> funcEndLines
             )
-            (fun pos ((name, args), content) ->
+            (fun pos (name, args) ->
                 fast.add {
                     Type = "init_abs"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
-                        "[str: \"%s\", arr: [%s], arr: [%s]]"
+                        "[str: \"%s\", arr: [%s]]"
                         name
                         (
                             args
-                            |> List.map (fun ((idt, f), s) ->
+                            |> List.map (fun (f, s) ->
                                 sprintf
-                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
-                                    (
-                                        match idt with
-                                        | Some _ -> true
-                                        | None -> false
-                                    )
-                                    f
-                                    (
-                                        match s with
-                                        | Some i -> i
-                                        | None -> -1
-                                    )
-                            )
-                            |> String.concat ", "
-                        )
-                        (
-                            content
-                            |> List.map (fun ((idt, f), s) ->
-                                sprintf
-                                    "arr: [bool: %b, str: \"%s\", ref: %i]"
-                                    (
-                                        match idt with
-                                        | Some _ -> true
-                                        | None -> false
-                                    )
+                                    "arr: [str: \"%s\", ref: %i]"
                                     f
                                     s
                             )
-                            |> String .concat ", "
+                            |> String.concat ", "
+                        )
+                }
+            )
+    let func_impl_pub =
+        pipe2
+            getPosition
+            (
+                pstring "pub"
+                .>> spaces1
+                .>> pstring "func"
+                .>> spaces1
+                >>. ident
+                .>>. between
+                    (spaces .>> pchar '(')
+                    (spaces .>> pchar ')')
+                    (
+                        sepBy
+                            (
+                                spaces
+                                >>. ident
+                                .>>. (spaces .>> pchar ':' .>> spaces >>. typp)
+                            )
+                            (spaces .>> pchar ',')
+                        |>> (fun lst ->
+                            ss.createScope()
+                            lst
+                            |> List.iter (fun (name, _) ->
+                                ss.add name
+                            )
+                            lst
+                        )
+                    )
+                .>>. (spaces .>> pstring "->" .>> spaces >>. typp .>> spaces)
+                .>> funcEndLines
+            )
+            (fun pos ((name, args), rettyp) ->
+                ss.deleteScope()
+                fast.add {
+                    Type = "func_impl_pub"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[str: \"%s\", ref: %i, arr: [%s]]"
+                        name
+                        rettyp
+                        (
+                            args
+                            |> List.map (fun (f, s) ->
+                                sprintf
+                                    "arr: [str: \"%s\", ref: %i]"
+                                    f
+                                    s
+                            ) |> String.concat ", "
+                        )
+                }
+            )
+    let initf_pub =
+        pipe2
+            getPosition
+            (pstring "pub" .>> spaces1 .>> pstring "init" .>> spaces1
+                >>. ident
+                .>>. between
+                    (spaces .>> pchar '(')
+                    (spaces .>> pchar ')')
+                    (sepBy
+                        (
+                            spaces
+                            >>. ident
+                            .>>. (spaces .>> pchar ':' .>> spaces >>. typp)
+                        )
+                        (spaces .>> pchar ',')
+                    )
+                .>> funcEndLines
+            )
+            (fun pos (name, args) ->
+                fast.add {
+                    Type = "init_abs"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[str: \"%s\", arr: [%s]]"
+                        name
+                        (
+                            args
+                            |> List.map (fun (f, s) ->
+                                sprintf
+                                    "arr: [str: \"%s\", ref: %i]"
+                                    f
+                                    s
+                            )
+                            |> String.concat ", "
                         )
                 }
             )
 
     let impl_ =
-        pipe3
+        pipe2
             getPosition
-            (opt (attempt (pstring "pub" .>> spaces1)))
             (pstring "impl" .>> spaces1
                 >>. ident
                 .>>. block (
@@ -635,43 +673,9 @@ type Parser() =
                     ]
                 )
             )
-            (fun pos modi (name, content) ->
+            (fun pos (name, content) ->
                 fast.add {
                     Type = "impl"
-                    Line = pos.Line
-                    Column = pos.Column
-                    Data = sprintf
-                        "[str: \"%s\", str: \"%s\", arr: [%s]]"
-                        (
-                            match modi with
-                            | Some v -> v
-                            | None -> ""
-                        )
-                        name
-                        (
-                            content
-                            |> List.map (sprintf "ref: %i")
-                            |> String.concat ", "
-                        )
-
-                }
-            )
-    let impl_abs =
-        pipe3
-            getPosition
-            (pstring "abs" .>> spaces1)
-            (pstring "impl" .>> spaces1
-                >>. ident
-                .>>. block (
-                    choice [
-                        attempt initf_abs
-                        func_impl_abs
-                    ]
-                )
-            )
-            (fun pos _ (name, content) ->
-                fast.add {
-                    Type = "impl_abs"
                     Line = pos.Line
                     Column = pos.Column
                     Data = sprintf
@@ -685,6 +689,63 @@ type Parser() =
 
                 }
             )
+    let impl_abs =
+        pipe3
+            getPosition
+            (pstring "abs" .>> spaces1)
+            (pstring "impl"
+                >>. block (
+                    choice [
+                        attempt initf_abs
+                        func_impl_abs
+                    ]
+                )
+            )
+            (fun pos _ content ->
+                fast.add {
+                    Type = "impl_abs"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[arr: [%s]]"
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String.concat ", "
+                        )
+
+                }
+            )
+    let impl_pub =
+        pipe3
+            getPosition
+            (pstring "pub" .>> spaces1)
+            (pstring "impl" .>> spaces1
+                >>. ident
+                .>>. block (
+                    choice [
+                        attempt initf_pub
+                        func_impl_pub
+                    ]
+                )
+            )
+            (fun pos _ (name, content) ->
+                fast.add {
+                    Type = "impl_pub"
+                    Line = pos.Line
+                    Column = pos.Column
+                    Data = sprintf
+                        "[str: \"%s\", arr: [%s]]"
+                        name
+                        (
+                            content
+                            |> List.map (sprintf "ref: %i")
+                            |> String.concat ", "
+                        )
+
+                }
+            )
+
     let field_ =
         pipe3
             getPosition
@@ -730,11 +791,10 @@ type Parser() =
                 >>. ident
                 .>>. opt (
                     attempt (
-                        spaces1
-                            .>> pstring ":"
-                            .>> spaces
-                            >>. ident
-                            .>>. opt (attempt (many (spaces .>> pchar ',' .>> spaces >>. ident)))
+                        spaces
+                        .>> pstring ":"
+                        .>> spaces
+                        >>. sepBy1 (opt (attempt (pstring "pub" .>> spaces1)) .>>. ident) (attempt (spaces .>> pchar ',' .>> spaces))
                     )
                 )
                 .>>. block
@@ -748,24 +808,20 @@ type Parser() =
                     Column = pos.Column
                     Data = sprintf
                         "[bool: %b, str: \"%s\", arr: [%s], arr: [%s]]"
-                        (
-                            match modi with
-                            | Some _ -> true
-                            | None -> false
-                        )
+                        modi.IsSome
                         name
                         (
                             (
                                 match frames with
-                                | Some (f, lst) ->
-                                    [f] @ (
-                                        match lst with
-                                        | Some l -> l
-                                        | None -> []
-                                    )
+                                | Some lst -> lst
                                 | None -> []
                             )
-                            |> List.map (sprintf "str: \"%s\"")
+                            |> List.map (fun (idt, name) ->
+                                sprintf
+                                    "arr: [bool: %b, str: \"%s\"]"
+                                    idt.IsSome
+                                    name
+                            )
                             |> String.concat ", "
                         )
                         (
@@ -888,6 +944,7 @@ type Parser() =
             field_ .>> fieldEndLines
             impl_ .>> implEndLines
             impl_abs .>> implEndLines
+            impl_pub .>> implEndLines
         ]
 
         typRef.Value <-
