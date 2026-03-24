@@ -23,7 +23,7 @@
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
     <Compile Include="compiler\Parser.fs" />
-	<Compile Include="arc\ARC.fs" />
+	<Compile Include="arc\MArc.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

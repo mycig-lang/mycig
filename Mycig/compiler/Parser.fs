@@ -941,7 +941,21 @@ type Parser() =
                                           | None -> -1)
                                          (content
                                           |> List.map (sprintf "ref: %i")
-                                          |> String.concat ", ") })
+                                         |> String.concat ", ") })
+                     attempt (
+                         pipe2
+                             getPosition
+                             ((choice [ attempt (pstring "&" .>> spaces .>>. pstring "mut" .>> spaces1 >>% "&mut")
+                                        attempt ((pchar '&' .>> spaces) >>% "&")
+                                        attempt (pstring "mut" .>> spaces1 >>% "mut") ])
+                              .>>. exprTerm)
+                             (fun pos (prefix, e) ->
+                                 fast.add
+                                     { Type = "bw_" + prefix
+                                       Line = pos.Line
+                                       Column = pos.Column
+                                       Data = sprintf "[ref: %i]" e })
+                     )
                      (getPosition .>>. variable
                       >>= (fun (pos, vName) ->
                           if ss.content vName then
@@ -995,7 +1009,7 @@ type Parser() =
                                      "[arr: [%s]]"
                                      (content
                                       |> List.map (sprintf "ref: %i")
-                                      |> String.concat ", ") }) ]
+                                      |> String.concat ", ") })]
             .>> spaces
 
     member __.run(s: string) : int =
