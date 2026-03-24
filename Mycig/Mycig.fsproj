@@ -6,25 +6,24 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Remove="memm\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="CODEX_JP.md" />
-    <None Include="script\mycig.mgvs">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Include="docs\fop.md" />
-    <None Include="memm\Frame.fs" />
-    <None Include="files\ReadFile.fs" />
+    <None Include="compiler\README.md" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="files\ReadFile.fs" />
-    <None Include="compiler\README.md" />
     <Compile Include="compiler\FlatAST.fs" />
     <Compile Include="compiler\ASTInserter.fs" />
     <Compile Include="compiler\TypeInference.fs" />
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
     <Compile Include="compiler\Parser.fs" />
-    <Compile Include="MycigVerificationScript.fs" />
+	<Compile Include="arc\ARC.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

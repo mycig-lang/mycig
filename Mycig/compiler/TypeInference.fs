@@ -3,7 +3,7 @@ namespace Mycig.Compiler
 open System
 open System.Text.RegularExpressions
 
-type InferredType =
+type private InferredType =
     | TUnknown
     | TSelf
     | TNamed of string
@@ -1008,13 +1008,13 @@ type TypeInference(fast: FlatAST) =
         nodeTypeCache <- Map.empty
         collectFunctions ()
 
-    member this.getFrames() = frames
-
     member __.getFlatAST() = fast
 
-    member this.resolveTypeRef(typeRef: int) = resolveTypeRefInner None typeRef
+    member private this.getFrames() = frames
 
-    member this.inferNode(nodeRef: int) =
+    member private this.resolveTypeRef(typeRef: int) = resolveTypeRefInner None typeRef
+
+    member private this.inferNode(nodeRef: int) =
         nodeTypeCache <- Map.empty
 
         let inferredFromContext =
@@ -1028,7 +1028,7 @@ type TypeInference(fast: FlatAST) =
         inferredFromContext
         |> Option.defaultWith (fun () -> inferNodeInner nodeRef Map.empty None)
 
-    member this.inferFunction(name: string) =
+    member private this.inferFunction(name: string) =
         let info =
             match Map.tryFind name functionsByQualifiedName with
             | Some fn -> Some fn
@@ -1319,7 +1319,7 @@ type TypeInference(fast: FlatAST) =
         deduplicateNamedTypeNodes ()
         this.init ()
 
-    member this.inferAll() =
+    member private this.inferAll() =
         nodeTypeCache <- Map.empty
 
         flatAST

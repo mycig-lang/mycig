@@ -28,8 +28,6 @@ func main() {
     let ti = TypeInference(fast)
     ti.init ()
     ti.materializeTypes()
-    
-    //ti.inferNode (3) |> printfn "%A"
 
     let fast2 = ti.getFlatAST ()
 
