@@ -1,6 +1,7 @@
 namespace Mycig.Compiler
 
 open System
+open System.Text.RegularExpressions
 
 type InferredType =
     | TUnknown
@@ -22,7 +23,8 @@ type InferredType =
         render this
 
 type private FunctionInfo =
-    { Name: string
+    { NodeRef: int
+      Name: string
       QualifiedName: string option
       Parameters: (string * InferredType) list
       ExplicitReturn: InferredType
@@ -36,7 +38,7 @@ type private FrameInfo =
       Fields: Map<string, InferredType> }
 
 type TypeInference(fast: FlatAST) =
-    let flatAST = fast.getAST () |> Array.indexed
+    let mutable flatAST = [||]
     let mutable flatData = [||]
     let mutable frames = [||]
     let mutable frameNames = Set.empty<string>
@@ -102,6 +104,8 @@ type TypeInference(fast: FlatAST) =
         else
             flatData[index] |> getObjList
 
+    let renderData values = FlatAST.RenderData values
+
     let rec mergeTypes left right =
         match left, right with
         | TUnknown, t
@@ -137,7 +141,7 @@ type TypeInference(fast: FlatAST) =
             frames
             |> Array.choose (fun (index, _) ->
                 match getData index with
-                | _isPub :: name :: bases :: content ->
+                | [ _isPub; name; bases; content ] ->
                     let fields =
                         content
                         |> getObjList
@@ -237,6 +241,136 @@ type TypeInference(fast: FlatAST) =
         | Some (TGeneric (selfName, _)) -> Some(sprintf "%s::%s" selfName name)
         | _ -> None
 
+    let rec buildTypeNodes startIndex inferredType line column =
+        let wrapNamed name =
+            [ { Type = "type_s"
+                Line = line
+                Column = column
+                Data = renderData [ box name ] } ]
+
+        match inferredType with
+        | TUnknown -> []
+        | TSelf -> wrapNamed "Self"
+        | TNamed name -> wrapNamed name
+        | TAbs inner ->
+            let innerNodes = buildTypeNodes startIndex inner line column
+            let innerRef = startIndex + innerNodes.Length - 1
+
+            innerNodes
+            @ [ { Type = "type_abs"
+                  Line = line
+                  Column = column
+                  Data = renderData [ box innerRef ] } ]
+        | TGeneric (name, args) ->
+            let argNodes, argRefs, _ =
+                (([], [], startIndex), args)
+                ||> List.fold (fun (nodes, refs, cursor) arg ->
+                    let generated = buildTypeNodes cursor arg line column
+
+                    if List.isEmpty generated then
+                        nodes, refs @ [ -1 ], cursor
+                    else
+                        let rootRef = cursor + generated.Length - 1
+                        nodes @ generated, refs @ [ rootRef ], cursor + generated.Length)
+
+            argNodes
+            @ [ { Type = "type_g"
+                  Line = line
+                  Column = column
+                  Data = renderData [ box name; box (argRefs |> List.map box) ] } ]
+        | TFunc (args, ret) ->
+            let argNodes, argRefs, cursor =
+                (([], [], startIndex), args)
+                ||> List.fold (fun (nodes, refs, current) arg ->
+                    let generated = buildTypeNodes current arg line column
+
+                    if List.isEmpty generated then
+                        nodes, refs @ [ -1 ], current
+                    else
+                        let rootRef = current + generated.Length - 1
+                        nodes @ generated, refs @ [ rootRef ], current + generated.Length)
+
+            let retNodes = buildTypeNodes cursor ret line column
+            let retRef =
+                if List.isEmpty retNodes then
+                    -1
+                else
+                    cursor + retNodes.Length - 1
+
+            argNodes
+            @ retNodes
+            @ [ { Type = "type_func"
+                  Line = line
+                  Column = column
+                  Data = renderData [ box (argRefs |> List.map box); box retRef ] } ]
+
+    let materializeTypeNodes insertAt inferredType line column =
+        let nodes = buildTypeNodes insertAt inferredType line column
+
+        if List.isEmpty nodes then
+            None, []
+        else
+            Some(insertAt + nodes.Length - 1), nodes
+
+    let rewriteNodeData (ast: ASTNode) returnRootRef selfRootRef =
+        let values = FlatAST.ParseData ast.Data
+
+        match ast.Type, values with
+        | "let", [ isMut; isRepo; name; typRef; content ] when getInt typRef = -1 ->
+            Some(
+                renderData
+                    [ isMut
+                      isRepo
+                      name
+                      box (defaultArg returnRootRef -1)
+                      content ]
+            )
+        | "func", [ isPub; name; retRef; parameters; body ] when getInt retRef = -1 ->
+            Some(
+                renderData
+                    [ isPub
+                      name
+                      box (defaultArg returnRootRef -1)
+                      parameters
+                      body ]
+            )
+        | "func_impl", [ modi; name; retRef; parameters; body ] ->
+            let selfTypeRef = defaultArg selfRootRef -1
+
+            let rewrittenParameters =
+                parameters
+                |> getObjList
+                |> List.map (fun entry ->
+                    let cols = getObjList entry
+
+                    match cols with
+                    | isImplicit :: argName :: typeRef :: tail when getInt typeRef = -2 ->
+                        box ([ isImplicit; argName; box selfTypeRef ] @ tail)
+                    | _ -> entry)
+
+            let rewrittenRetRef =
+                if getInt retRef = -1 then
+                    defaultArg returnRootRef -1
+                else
+                    getInt retRef
+
+            let changed =
+                rewrittenRetRef <> getInt retRef
+                || (parameters
+                    |> getObjList
+                    |> List.exists (fun entry ->
+                        match getObjList entry with
+                        | _ :: _ :: typeRef :: _ -> getInt typeRef = -2
+                        | _ -> false))
+
+            if changed then
+                Some(renderData [ modi; name; box rewrittenRetRef; box rewrittenParameters; body ])
+            else
+                None
+        | "operand_func", [ parameters; retRef; body ] when getInt retRef = -1 ->
+            Some(renderData [ parameters; box (defaultArg returnRootRef -1); body ])
+        | _ -> None
+
     let parseParameters selfType (value: obj) =
         value
         |> getObjList
@@ -255,9 +389,10 @@ type TypeInference(fast: FlatAST) =
 
             name, inferredType)
 
-    let collectFunction name qualifiedName explicitReturn parameters body selfType isAbstract =
+    let collectFunction nodeRef name qualifiedName explicitReturn parameters body selfType isAbstract =
         let info =
-            { Name = name
+            { NodeRef = nodeRef
+              Name = name
               QualifiedName = qualifiedName
               Parameters = parameters
               ExplicitReturn = explicitReturn
@@ -288,6 +423,7 @@ type TypeInference(fast: FlatAST) =
             match memberNode.Type, memberData with
             | "func_impl", [ _modi; name; retRef; parameters; body ] ->
                 collectFunction
+                    memberRef
                     (getString name)
                     (qualified (getString name))
                     (resolveTypeRefInner selfType (getInt retRef))
@@ -297,6 +433,7 @@ type TypeInference(fast: FlatAST) =
                     false
             | "func_impl_abs", [ name; retRef; parameters ] ->
                 collectFunction
+                    memberRef
                     (getString name)
                     (qualified (getString name))
                     (resolveTypeRefInner selfType (getInt retRef))
@@ -313,6 +450,7 @@ type TypeInference(fast: FlatAST) =
                     true
             | "func_impl_pub", [ name; retRef; parameters ] ->
                 collectFunction
+                    memberRef
                     (getString name)
                     (qualified (getString name))
                     (resolveTypeRefInner selfType (getInt retRef))
@@ -329,6 +467,7 @@ type TypeInference(fast: FlatAST) =
                     true
             | "init", [ _isPub; _name; parameters; _body ] ->
                 collectFunction
+                    memberRef
                     "init"
                     (qualified "init")
                     (TNamed ownerFrame)
@@ -338,6 +477,7 @@ type TypeInference(fast: FlatAST) =
                     false
             | "init_abs", [ _name; parameters ] ->
                 collectFunction
+                    memberRef
                     "init"
                     (qualified "init")
                     (TNamed ownerFrame)
@@ -383,6 +523,7 @@ type TypeInference(fast: FlatAST) =
             match node.Type, data with
             | "func", [ _isPub; name; retRef; parameters; body ] ->
                 collectFunction
+                    index
                     (getString name)
                     None
                     (resolveTypeRefInner None (getInt retRef))
@@ -392,6 +533,7 @@ type TypeInference(fast: FlatAST) =
                     false
             | "operand_func", [ parameters; retRef; _body ] ->
                 collectFunction
+                    index
                     (sprintf "@lambda_%d" index)
                     None
                     (resolveTypeRefInner None (getInt retRef))
@@ -843,7 +985,8 @@ type TypeInference(fast: FlatAST) =
             nodeTypeCache <- nodeTypeCache |> Map.add nodeRef inferredType
             inferredType
 
-    member __.init() =
+    member this.init() =
+        flatAST <- fast.getAST () |> Array.indexed
         fast.initData ()
         flatData <- fast.getData ()
 
@@ -866,6 +1009,8 @@ type TypeInference(fast: FlatAST) =
         collectFunctions ()
 
     member this.getFrames() = frames
+
+    member __.getFlatAST() = fast
 
     member this.resolveTypeRef(typeRef: int) = resolveTypeRefInner None typeRef
 
@@ -890,6 +1035,289 @@ type TypeInference(fast: FlatAST) =
             | None -> Map.tryFind name functionsByName
 
         info |> Option.map inferFunctionReturn
+
+    member this.materializeTypes() =
+        let refRegex = Regex(@"ref:\s*(-?\d+)", RegexOptions.Compiled)
+
+        let rewriteRefs canonicalIndex removedIndex (ast: ASTNode array) =
+            ast
+            |> Array.map (fun node ->
+                let rewritten =
+                    refRegex.Replace(
+                        node.Data,
+                        MatchEvaluator(fun m ->
+                            let value = int m.Groups[1].Value
+
+                            if value = removedIndex then
+                                sprintf "ref: %i" canonicalIndex
+                            elif value > removedIndex then
+                                sprintf "ref: %i" (value - 1)
+                            else
+                                m.Value)
+                    )
+
+                { node with Data = rewritten })
+
+        let deduplicateNamedTypeNodes () =
+            let mutable ast = fast.getAST ()
+
+            let duplicates =
+                ast
+                |> Array.indexed
+                |> Array.choose (fun (index, node) ->
+                    if node.Type = "type_s" then
+                        Some(node.Data, index)
+                    else
+                        None)
+                |> Array.groupBy fst
+                |> Array.collect (fun (_data, items) ->
+                    items
+                    |> Array.map snd
+                    |> Array.sort
+                    |> function
+                        | [||]
+                        | [| _ |] -> [||]
+                        | sorted -> sorted[1..] |> Array.map (fun duplicate -> sorted[0], duplicate))
+                |> Array.sortByDescending snd
+
+            duplicates
+            |> Array.iter (fun (canonicalIndex, duplicateIndex) ->
+                ast <- rewriteRefs canonicalIndex duplicateIndex ast
+                ast <- ast |> Array.removeAt duplicateIndex)
+
+            fast.setAST ast
+            fast.initData()
+
+        let getInsertionIndex nodeRef nodeType data =
+            let refsFrom value =
+                value |> getObjList |> List.map getInt
+
+            let firstRefOrNode value =
+                refsFrom value
+                |> List.tryHead
+                |> Option.defaultValue nodeRef
+
+            match nodeType, data with
+            | "let", [ _isMut; _isRepo; _name; _typRef; content ] -> firstRefOrNode content
+            | "func", [ _isPub; _name; _retRef; _parameters; body ] -> firstRefOrNode body
+            | "func_impl", [ _modi; _name; _retRef; _parameters; body ] -> firstRefOrNode body
+            | "operand_func", [ _parameters; _retRef; body ] -> firstRefOrNode body
+            | _ -> nodeRef
+
+        let tryFindFunctionInfoByNodeRef nodeRef =
+            functionsByQualifiedName
+            |> Map.values
+            |> Seq.tryFind (fun info -> info.NodeRef = nodeRef)
+            |> Option.orElseWith (fun () ->
+                functionsByName
+                |> Map.values
+                |> Seq.tryFind (fun info -> info.NodeRef = nodeRef))
+
+        let tryFindFrameSelfType nodeRef =
+            frames
+            |> Array.tryPick (fun (frameRef, _) ->
+                match getData frameRef with
+                | [ _isPub; frameName; _bases; content ] ->
+                    let contentRefs = content |> getObjList |> List.map getInt
+
+                    if contentRefs |> List.contains nodeRef then
+                        Some(TNamed(getString frameName))
+                    else
+                        None
+                | _ -> None)
+
+        let targets =
+            flatAST
+            |> Array.choose (fun (index, node) ->
+                let data = getData index
+
+                match node.Type, data with
+                | "let", [ _isMut; _isRepo; _name; typRef; _content ] when getInt typRef = -1 ->
+                    let inferred = this.inferNode index
+
+                    match inferred with
+                    | TUnknown -> None
+                    | _ -> Some(index, getInsertionIndex index node.Type data)
+                | "func", [ _isPub; name; retRef; _parameters; _body ] when getInt retRef = -1 ->
+                    this.inferFunction(getString name)
+                    |> Option.bind (function
+                        | TUnknown -> None
+                        | _ -> Some(index, getInsertionIndex index node.Type data))
+                | "func_impl", [ _modi; _name; retRef; parameters; _body ] ->
+                    let needsReturn = getInt retRef = -1
+
+                    let needsSelf =
+                        parameters
+                        |> getObjList
+                        |> List.exists (fun entry ->
+                            match getObjList entry with
+                            | _ :: _ :: typeRef :: _ -> getInt typeRef = -2
+                            | _ -> false)
+
+                    if needsReturn || needsSelf then
+                        Some(index, getInsertionIndex index node.Type data)
+                    else
+                        None
+                | "operand_func", [ _parameters; retRef; _body ] when getInt retRef = -1 ->
+                    Some(index, getInsertionIndex index node.Type data)
+                | _ -> None)
+            |> Array.sortByDescending snd
+
+        let inserter = ASTInserter(fast)
+        let mutable appliedInsertions : (int * int) list = []
+        let mutable materializedTypeRoots = Map.empty<InferredType, int>
+
+        let adjustIndex originalIndex =
+            originalIndex
+            + (appliedInsertions
+               |> List.sumBy (fun (insertPos, count) ->
+                   if insertPos <= originalIndex then
+                       count
+                   else
+                       0))
+
+        let shiftMaterializedRoots insertPos count =
+            materializedTypeRoots <-
+                materializedTypeRoots
+                |> Map.map (fun _ rootRef ->
+                    if rootRef >= insertPos then
+                        rootRef + count
+                    else
+                        rootRef)
+
+        let getOrMaterializeType insertPos inferredType line column =
+            match inferredType with
+            | TUnknown -> None, [], None
+            | _ ->
+                match Map.tryFind inferredType materializedTypeRoots with
+                | Some rootRef -> Some rootRef, [], None
+                | None ->
+                    let rootRef, nodes = materializeTypeNodes insertPos inferredType line column
+
+                    match rootRef with
+                    | Some root -> Some root, nodes, Some(inferredType, root)
+                    | None -> None, [], None
+
+        targets
+        |> Array.iter (fun (index, insertIndex) ->
+            let currentIndex = adjustIndex index
+            let currentInsertIndex = adjustIndex insertIndex
+            let currentNode = (inserter.getAST ()).[currentIndex]
+            let currentData = FlatAST.ParseData currentNode.Data
+
+            let returnRootRef, returnNodes, selfRootRef, selfNodes =
+                match currentNode.Type, currentData with
+                | "let", [ _isMut; _isRepo; _name; typRef; _content ] when getInt typRef = -1 ->
+                    let inferred = this.inferNode index
+
+                    if inferred = TUnknown then
+                        None, [], None, []
+                    else
+                        let rootRef, nodes, pending =
+                            getOrMaterializeType currentInsertIndex inferred currentNode.Line currentNode.Column
+                        pending |> Option.iter (fun (typ, root) -> materializedTypeRoots <- materializedTypeRoots |> Map.add typ root)
+                        rootRef, nodes, None, []
+                | "func", [ _isPub; name; retRef; _parameters; _body ] when getInt retRef = -1 ->
+                    match this.inferFunction(getString name) with
+                    | Some inferred when inferred <> TUnknown ->
+                        let rootRef, nodes, pending =
+                            getOrMaterializeType currentInsertIndex inferred currentNode.Line currentNode.Column
+                        pending |> Option.iter (fun (typ, root) -> materializedTypeRoots <- materializedTypeRoots |> Map.add typ root)
+                        rootRef, nodes, None, []
+                    | _ -> None, [], None, []
+                | "func_impl", [ _modi; _name; retRef; parameters; _body ] ->
+                    let inferredReturn =
+                        if getInt retRef = -1 then
+                            tryFindFunctionInfoByNodeRef index
+                            |> Option.map inferFunctionReturn
+                            |> Option.defaultValue TUnknown
+                        else
+                            TUnknown
+
+                    let inferredSelf =
+                        let needsSelf =
+                            parameters
+                            |> getObjList
+                            |> List.exists (fun entry ->
+                                match getObjList entry with
+                                | _ :: _ :: typeRef :: _ -> getInt typeRef = -2
+                                | _ -> false)
+
+                        if needsSelf then
+                            tryFindFunctionInfoByNodeRef index
+                            |> Option.bind (fun info -> info.SelfType)
+                            |> Option.orElseWith (fun () -> tryFindFrameSelfType index)
+                            |> Option.defaultValue TUnknown
+                        else
+                            TUnknown
+
+                    let selfRoot, selfNodes, returnRoot, returnNodes =
+                        match inferredSelf, inferredReturn with
+                        | selfType, returnType when selfType <> TUnknown && returnType <> TUnknown && selfType = returnType ->
+                            let sharedRoot, sharedNodes, pending =
+                                getOrMaterializeType currentInsertIndex selfType currentNode.Line currentNode.Column
+
+                            pending |> Option.iter (fun (typ, root) -> materializedTypeRoots <- materializedTypeRoots |> Map.add typ root)
+                            sharedRoot, sharedNodes, sharedRoot, []
+                        | selfType, returnType ->
+                            let selfRoot, selfNodes =
+                                if selfType = TUnknown then
+                                    None, []
+                                else
+                                    let root, nodes, pending =
+                                        getOrMaterializeType currentInsertIndex selfType currentNode.Line currentNode.Column
+                                    pending |> Option.iter (fun (typ, registeredRoot) -> materializedTypeRoots <- materializedTypeRoots |> Map.add typ registeredRoot)
+                                    root, nodes
+
+                            let returnRoot, returnNodes =
+                                if returnType = TUnknown then
+                                    None, []
+                                else
+                                    let root, nodes, pending =
+                                        getOrMaterializeType
+                                            (currentInsertIndex + selfNodes.Length)
+                                            returnType
+                                            currentNode.Line
+                                            currentNode.Column
+                                    pending |> Option.iter (fun (typ, registeredRoot) -> materializedTypeRoots <- materializedTypeRoots |> Map.add typ registeredRoot)
+                                    root, nodes
+
+                            selfRoot, selfNodes, returnRoot, returnNodes
+
+                    returnRoot, returnNodes, selfRoot, selfNodes
+                | "operand_func", [ _parameters; retRef; _body ] when getInt retRef = -1 ->
+                    let inferred = this.inferNode index
+
+                    match inferred with
+                    | TFunc (_, ret) when ret <> TUnknown ->
+                        let rootRef, nodes, pending =
+                            getOrMaterializeType currentInsertIndex ret currentNode.Line currentNode.Column
+                        pending |> Option.iter (fun (typ, root) -> materializedTypeRoots <- materializedTypeRoots |> Map.add typ root)
+                        rootRef, nodes, None, []
+                    | _ -> None, [], None, []
+                | _ -> None, [], None, []
+
+            let insertedNodes = selfNodes @ returnNodes
+
+            if List.isEmpty insertedNodes |> not then
+                inserter.insertMany currentInsertIndex insertedNodes
+                shiftMaterializedRoots (currentInsertIndex + insertedNodes.Length) insertedNodes.Length
+                appliedInsertions <- (insertIndex, insertedNodes.Length) :: appliedInsertions
+
+            let rewrittenIndex =
+                if currentInsertIndex <= currentIndex then
+                    currentIndex + insertedNodes.Length
+                else
+                    currentIndex
+            let rewrittenNode = (inserter.getAST ()).[rewrittenIndex]
+
+            match rewriteNodeData rewrittenNode returnRootRef selfRootRef with
+            | Some data -> inserter.replace rewrittenIndex { rewrittenNode with Data = data }
+            | None -> ())
+
+        inserter.commit ()
+        deduplicateNamedTypeNodes ()
+        this.init ()
 
     member this.inferAll() =
         nodeTypeCache <- Map.empty

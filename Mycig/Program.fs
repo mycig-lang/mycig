@@ -15,14 +15,8 @@ package main
 
 import std::fmt
 
-frame A {
-    impl Self {
-        pub init new() {}
-    }
-}
-
 func main() {
-    let a = A::new()
+    let a = 1
     a + 2
 }
 "
@@ -33,6 +27,12 @@ func main() {
 
     let ti = TypeInference(fast)
     ti.init ()
-    ti.inferNode (3) |> printfn "%A"
+    ti.materializeTypes()
+    
+    //ti.inferNode (3) |> printfn "%A"
+
+    let fast2 = ti.getFlatAST ()
+
+    printfn "%A" fast2
 
     0

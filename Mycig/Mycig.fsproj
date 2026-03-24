@@ -19,6 +19,7 @@
     <Compile Include="files\ReadFile.fs" />
     <None Include="compiler\README.md" />
     <Compile Include="compiler\FlatAST.fs" />
+    <Compile Include="compiler\ASTInserter.fs" />
     <Compile Include="compiler\TypeInference.fs" />
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
