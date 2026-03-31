@@ -754,6 +754,20 @@ type Parser() =
 
         typRef.Value <-
             choice [ attempt (
+                         pipe2
+                             getPosition
+                             ((choice [ attempt (pstring "&" .>> spaces .>>. pstring "mut" .>> spaces1 >>% "&mut")
+                                        attempt ((pchar '&' .>> spaces) >>% "&")
+                                        attempt (pstring "mut" .>> spaces1 >>% "mut") ])
+                              .>>. typ)
+                             (fun pos (prefix, inner) ->
+                                 fast.add
+                                     { Type = "type_bw_" + prefix
+                                       Line = pos.Line
+                                       Column = pos.Column
+                                       Data = sprintf "[ref: %i]" inner })
+                     )
+                     attempt (
                          pipe3
                              getPosition
                              ident
@@ -956,18 +970,19 @@ type Parser() =
                                        Column = pos.Column
                                        Data = sprintf "[ref: %i]" e })
                      )
-                     (getPosition .>>. variable
-                      >>= (fun (pos, vName) ->
-                          if ss.content vName then
-                              fast.add
-                                  { Type = "ref_var"
-                                    Line = pos.Line
-                                    Column = pos.Column
-                                    Data = sprintf "[str: \"%s\"]" vName }
-                              |> preturn
-                          else
-                              fail
-                              <| sprintf "variable '%s' does not exist." vName))
+                     attempt (
+                         getPosition .>>. variable
+                         >>= (fun (pos, vName) ->
+                             if ss.content vName then
+                                 fast.add
+                                     { Type = "ref_var"
+                                       Line = pos.Line
+                                       Column = pos.Column
+                                       Data = sprintf "[str: \"%s\"]" vName }
+                                 |> preturn
+                             else
+                                 fail
+                                 <| sprintf "variable '%s' does not exist." vName))
                      pipe2
                          getPosition
                          ((sepBy1 ident (attempt (spaces .>> pstring "::" .>> spaces)))

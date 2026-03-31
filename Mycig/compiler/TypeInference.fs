@@ -10,6 +10,8 @@ type private InferredType =
     | TGeneric of string * InferredType list
     | TFunc of InferredType list * InferredType
     | TAbs of InferredType
+    | TMut of InferredType
+    | TRef of bool * InferredType
     override this.ToString() =
         let rec render =
             function
@@ -19,6 +21,9 @@ type private InferredType =
             | TGeneric (name, args) -> sprintf "%s<%s>" name (args |> List.map render |> String.concat ", ")
             | TFunc (args, ret) -> sprintf "func(%s) -> %s" (args |> List.map render |> String.concat ", ") (render ret)
             | TAbs inner -> sprintf "abs %s" (render inner)
+            | TMut inner -> sprintf "mut %s" (render inner)
+            | TRef (true, inner) -> sprintf "&mut %s" (render inner)
+            | TRef (false, inner) -> sprintf "& %s" (render inner)
 
         render this
 
@@ -118,6 +123,8 @@ type TypeInference(fast: FlatAST) =
         | TFunc (la, lr), TFunc (ra, rr) when la.Length = ra.Length ->
             TFunc(List.map2 mergeTypes la ra, mergeTypes lr rr)
         | TAbs l, TAbs r -> TAbs(mergeTypes l r)
+        | TMut l, TMut r -> TMut(mergeTypes l r)
+        | TRef (lm, l), TRef (rm, r) when lm = rm -> TRef(lm, mergeTypes l r)
         | TNamed l, TNamed r when numericTypes.Contains l && numericTypes.Contains r ->
             if l = "f64" || r = "f64" then
                 TNamed "f64"
@@ -219,6 +226,9 @@ type TypeInference(fast: FlatAST) =
             | "type", [ child ] -> resolveTypeRefInner selfType (getInt child)
             | "type_s", [ name ] -> TNamed(getString name)
             | "type_abs", [ inner ] -> TAbs(resolveTypeRefInner selfType (getInt inner))
+            | "type_bw_mut", [ inner ] -> TMut(resolveTypeRefInner selfType (getInt inner))
+            | "type_bw_&", [ inner ] -> TRef(false, resolveTypeRefInner selfType (getInt inner))
+            | "type_bw_&mut", [ inner ] -> TRef(true, resolveTypeRefInner selfType (getInt inner))
             | "type_g", [ name; args ] ->
                 TGeneric(
                     getString name,
@@ -241,71 +251,104 @@ type TypeInference(fast: FlatAST) =
         | Some (TGeneric (selfName, _)) -> Some(sprintf "%s::%s" selfName name)
         | _ -> None
 
-    let rec buildTypeNodes startIndex inferredType line column =
+    let rec buildTypeNodes wrapRoot startIndex inferredType line column : ASTNode list =
+        let wrapTypeRoot (nodes: ASTNode list) =
+            let innerRef = startIndex + nodes.Length - 1
+
+            nodes
+            @ [ { Type = "type"
+                  Line = line
+                  Column = column
+                  Data = renderData [ box innerRef ] } ]
+
         let wrapNamed name =
             [ { Type = "type_s"
                 Line = line
                 Column = column
                 Data = renderData [ box name ] } ]
 
-        match inferredType with
-        | TUnknown -> []
-        | TSelf -> wrapNamed "Self"
-        | TNamed name -> wrapNamed name
-        | TAbs inner ->
-            let innerNodes = buildTypeNodes startIndex inner line column
-            let innerRef = startIndex + innerNodes.Length - 1
+        let nodes : ASTNode list =
+            match inferredType with
+            | TUnknown -> []
+            | TSelf -> wrapNamed "Self"
+            | TNamed name -> wrapNamed name
+            | TAbs inner ->
+                let innerNodes = buildTypeNodes false startIndex inner line column
+                let innerRef = startIndex + innerNodes.Length - 1
 
-            innerNodes
-            @ [ { Type = "type_abs"
-                  Line = line
-                  Column = column
-                  Data = renderData [ box innerRef ] } ]
-        | TGeneric (name, args) ->
-            let argNodes, argRefs, _ =
-                (([], [], startIndex), args)
-                ||> List.fold (fun (nodes, refs, cursor) arg ->
-                    let generated = buildTypeNodes cursor arg line column
+                innerNodes
+                @ [ { Type = "type_abs"
+                      Line = line
+                      Column = column
+                      Data = renderData [ box innerRef ] } ]
+            | TMut inner ->
+                let innerNodes = buildTypeNodes false startIndex inner line column
+                let innerRef = startIndex + innerNodes.Length - 1
 
-                    if List.isEmpty generated then
-                        nodes, refs @ [ -1 ], cursor
+                innerNodes
+                @ [ { Type = "type_bw_mut"
+                      Line = line
+                      Column = column
+                      Data = renderData [ box innerRef ] } ]
+            | TRef (isMut, inner) ->
+                let innerNodes = buildTypeNodes false startIndex inner line column
+                let innerRef = startIndex + innerNodes.Length - 1
+
+                innerNodes
+                @ [ { Type = if isMut then "type_bw_&mut" else "type_bw_&"
+                      Line = line
+                      Column = column
+                      Data = renderData [ box innerRef ] } ]
+            | TGeneric (name, args) ->
+                let argNodes, argRefs, _ =
+                    (([], [], startIndex), args)
+                    ||> List.fold (fun (nodes, refs, cursor) arg ->
+                        let generated = buildTypeNodes false cursor arg line column
+
+                        if List.isEmpty generated then
+                            nodes, refs @ [ -1 ], cursor
+                        else
+                            let rootRef = cursor + generated.Length - 1
+                            nodes @ generated, refs @ [ rootRef ], cursor + generated.Length)
+
+                argNodes
+                @ [ { Type = "type_g"
+                      Line = line
+                      Column = column
+                      Data = renderData [ box name; box (argRefs |> List.map box) ] } ]
+            | TFunc (args, ret) ->
+                let argNodes, argRefs, cursor =
+                    (([], [], startIndex), args)
+                    ||> List.fold (fun (nodes, refs, current) arg ->
+                        let generated = buildTypeNodes false current arg line column
+
+                        if List.isEmpty generated then
+                            nodes, refs @ [ -1 ], current
+                        else
+                            let rootRef = current + generated.Length - 1
+                            nodes @ generated, refs @ [ rootRef ], current + generated.Length)
+
+                let retNodes = buildTypeNodes false cursor ret line column
+                let retRef =
+                    if List.isEmpty retNodes then
+                        -1
                     else
-                        let rootRef = cursor + generated.Length - 1
-                        nodes @ generated, refs @ [ rootRef ], cursor + generated.Length)
+                        cursor + retNodes.Length - 1
 
-            argNodes
-            @ [ { Type = "type_g"
-                  Line = line
-                  Column = column
-                  Data = renderData [ box name; box (argRefs |> List.map box) ] } ]
-        | TFunc (args, ret) ->
-            let argNodes, argRefs, cursor =
-                (([], [], startIndex), args)
-                ||> List.fold (fun (nodes, refs, current) arg ->
-                    let generated = buildTypeNodes current arg line column
+                argNodes
+                @ retNodes
+                @ [ { Type = "type_func"
+                      Line = line
+                      Column = column
+                      Data = renderData [ box (argRefs |> List.map box); box retRef ] } ]
 
-                    if List.isEmpty generated then
-                        nodes, refs @ [ -1 ], current
-                    else
-                        let rootRef = current + generated.Length - 1
-                        nodes @ generated, refs @ [ rootRef ], current + generated.Length)
-
-            let retNodes = buildTypeNodes cursor ret line column
-            let retRef =
-                if List.isEmpty retNodes then
-                    -1
-                else
-                    cursor + retNodes.Length - 1
-
-            argNodes
-            @ retNodes
-            @ [ { Type = "type_func"
-                  Line = line
-                  Column = column
-                  Data = renderData [ box (argRefs |> List.map box); box retRef ] } ]
+        if wrapRoot && List.isEmpty nodes |> not then
+            wrapTypeRoot nodes
+        else
+            nodes
 
     let materializeTypeNodes insertAt inferredType line column =
-        let nodes = buildTypeNodes insertAt inferredType line column
+        let nodes = buildTypeNodes true insertAt inferredType line column
 
         if List.isEmpty nodes then
             None, []
@@ -690,6 +733,9 @@ type TypeInference(fast: FlatAST) =
             match node.Type, data with
             | "type", [ child ]
             | "paren", [ child ] -> tryInferInsideNode target (getInt child) environment selfType
+            | "bw_mut", [ child ]
+            | "bw_&", [ child ]
+            | "bw_&mut", [ child ] -> tryInferInsideNode target (getInt child) environment selfType
             | "call_func", [ _name; args ] ->
                 args
                 |> getObjList
@@ -899,6 +945,9 @@ type TypeInference(fast: FlatAST) =
                         TUnknown
                 | "type", [ child ]
                 | "paren", [ child ] -> inferNodeInner (getInt child) environment selfType
+                | "bw_mut", [ child ] -> TMut(inferNodeInner (getInt child) environment selfType)
+                | "bw_&", [ child ] -> TRef(false, inferNodeInner (getInt child) environment selfType)
+                | "bw_&mut", [ child ] -> TRef(true, inferNodeInner (getInt child) environment selfType)
                 | "block", [ content ] ->
                     inferSequence (content |> getObjList |> List.map getInt) environment selfType
                     |> fst
@@ -1058,14 +1107,14 @@ type TypeInference(fast: FlatAST) =
 
                 { node with Data = rewritten })
 
-        let deduplicateNamedTypeNodes () =
+        let deduplicateNodeType nodeType =
             let mutable ast = fast.getAST ()
 
             let duplicates =
                 ast
                 |> Array.indexed
                 |> Array.choose (fun (index, node) ->
-                    if node.Type = "type_s" then
+                    if node.Type = nodeType then
                         Some(node.Data, index)
                     else
                         None)
@@ -1087,6 +1136,10 @@ type TypeInference(fast: FlatAST) =
 
             fast.setAST ast
             fast.initData()
+
+        let deduplicateTypeNodes () =
+            deduplicateNodeType "type_s"
+            deduplicateNodeType "type"
 
         let getInsertionIndex nodeRef nodeType data =
             let refsFrom value =
@@ -1316,7 +1369,7 @@ type TypeInference(fast: FlatAST) =
             | None -> ())
 
         inserter.commit ()
-        deduplicateNamedTypeNodes ()
+        deduplicateTypeNodes ()
         this.init ()
 
     member private this.inferAll() =

@@ -4,9 +4,6 @@ open Mycig
 
 [<EntryPoint>]
 let main _ =
-    let p = pint32
-    run p "-1" |> printfn "%A"
-
     let p = Parser()
 
     let code =
@@ -15,15 +12,18 @@ package main
 
 import std::fmt
 
+func f() -> &mut i32 {
+    100
+}
+
 func main() {
-    let a = &1
-    a + 2
+    let a = f()
+    let b = &mut a
 }
 "
 
     p.run code |> printfn "%i\n"
-    let fast = p.getFlatAST ()
-    fast |> printfn "%A"
+    let fast = p.getFlatAST()
 
     let ti = TypeInference(fast)
     ti.init ()
