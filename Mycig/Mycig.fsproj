@@ -13,6 +13,7 @@
     <None Include="CODEX_JP.md" />
     <None Include="docs\fop.md" />
     <None Include="compiler\README.md" />
+	<None Include="compiler\GUIDE.md" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +24,7 @@
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
     <Compile Include="compiler\Parser.fs" />
-    <Compile Include="arc\Lifetime.fs" />
+    <Compile Include="arc\FreeLifetime.fs" />
 	<Compile Include="arc\BArc.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

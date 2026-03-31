@@ -25,12 +25,6 @@ func main() {
     p.run code |> printfn "%i\n"
     let fast = p.getFlatAST()
 
-    let ti = TypeInference(fast)
-    ti.init ()
-    ti.materializeTypes()
-
-    let fast2 = ti.getFlatAST ()
-
-    printfn "%A" fast2
+    printfn "%A" fast
 
     0
