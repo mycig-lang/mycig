@@ -30,24 +30,23 @@ type Parser() =
                       .>>. opt (attempt (spaces >>. typ .>> spaces)))
                      (fun pos (arg, rettyp) ->
                          fast.add
-                             { Type = "type_func"
+                         <| TypeFunc (
+                             {
                                Line = pos.Line
                                Column = pos.Column
-                               Data =
-                                 sprintf
-                                     "[arr: [%s], ref: %i]"
-                                     (arg
-                                      |> List.map (sprintf "ref: %i")
-                                      |> String.concat ", ")
-                                     (match rettyp with
-                                      | Some t -> t
-                                      | None -> -1) })
+                             },
+                             arg,
+                             (match rettyp with
+                             | Some t -> t
+                             | None -> -1) ))
                  pipe2 getPosition typ (fun pos t ->
                      fast.add
-                         { Type = "type"
+                     <| Type (
+                         {
                            Line = pos.Line
                            Column = pos.Column
-                           Data = sprintf "[ref: %i]" t }) ]
+                         },
+                         t )) ]
 
     let variable = ident
 
@@ -99,10 +98,12 @@ type Parser() =
                 (sepBy1 ident (attempt (spaces .>> pstring "::" .>> spaces))))
             (fun pos lst ->
                 fast.add
-                    { Type = "package"
+                <| Package (
+                    {
                       Line = pos.Line
                       Column = pos.Column
-                      Data = sprintf "[str: \"%s\"]" (lst |> String.concat "::") })
+                    },
+                    lst |> String.concat "::" ))
         .>> spaces
 
     let import_ =
@@ -114,10 +115,12 @@ type Parser() =
                 (sepBy1 ident (attempt (spaces .>> pstring "::" .>> spaces))))
             (fun pos lst ->
                 fast.add
-                    { Type = "import"
+                <| Import (
+                    {
                       Line = pos.Line
                       Column = pos.Column
-                      Data = sprintf "[str: \"%s\"]" (lst |> String.concat "::") })
+                    },
+                    lst |> String.concat "::" ))
         .>> spaces
 
     let if_ =
@@ -142,34 +145,21 @@ type Parser() =
              .>>. opt (pstring "else" .>> spaces >>. funcBlock funcTerm))
             (fun pos ((f, s), opt) ->
                 fast.add
-                    { Type = "if"
+                <| If (
+                    {
                       Line = pos.Line
                       Column = pos.Column
-                      Data =
-                        sprintf
-                            "[ref: %i, arr: [%s], arr: [%s], opt: [%s]]"
-                            (fst f)
-                            (snd f
-                             |> List.map (sprintf "ref: %i")
-                             |> String.concat ", ")
-                            (s
-                             |> function
-                                 | None -> []
-                                 | Some lst -> lst
-                             |> List.map (fun (e, content) ->
-                                 sprintf
-                                     "arr: [ref: %i, arr: [%s]]"
-                                     e
-                                     (content
-                                      |> List.map (sprintf "ref: %i")
-                                      |> String.concat ", "))
-                             |> String.concat ", ")
-                            (match opt with
-                             | None -> ""
-                             | Some v ->
-                                 v
-                                 |> List.map (sprintf "ref: %i")
-                                 |> String.concat ", ") })
+                    },
+                    fst f,
+                    snd f,
+                    (s
+                    |> function
+                        | None -> []
+                        | Some lst -> lst),
+                    opt
+                    |> function
+                        | None -> []
+                        | Some lst -> lst ))
 
     let let_ =
         pipe2

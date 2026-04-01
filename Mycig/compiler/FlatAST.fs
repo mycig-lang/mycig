@@ -2,11 +2,17 @@ namespace Mycig.Compiler
 
 open FParsec
 
+type private NodePos = {
+    Line: int64
+    Column: int64
+}
+
 type ASTNode =
-    { Type: string
-      Line: int64
-      Column: int64
-      mutable Data: string }
+    | Package of NodePos * string
+    | Import of NodePos * string
+    | TypeFunc of NodePos * int list * int
+    | Type of NodePos * int
+    | If of NodePos * int * int list * (int * int list) list * int list
 
 exception FASTParseException of string
 
