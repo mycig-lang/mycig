@@ -12,7 +12,6 @@
   <ItemGroup>
     <None Include="CODEX_JP.md" />
     <None Include="docs\fop.md" />
-    <None Include="compiler\README.md" />
 	<None Include="compiler\GUIDE.md" />
   </ItemGroup>
 
