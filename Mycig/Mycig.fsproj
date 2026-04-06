@@ -17,18 +17,20 @@
 
   <ItemGroup>
     <Compile Include="files\ReadFile.fs" />
-    <Compile Include="compiler\FlatAST.fs" />
-    <Compile Include="compiler\ASTInserter.fs" />
-    <Compile Include="compiler\TypeInference.fs" />
+    <None Include="compiler\FlatAST.fs" />
+    <None Include="compiler\ASTInserter.fs" />
+    <None Include="compiler\TypeInference.fs" />
+	<Compile Include="compiler\lexer\Lexer.fs" />
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
-    <Compile Include="compiler\Parser.fs" />
-    <Compile Include="arc\FreeLifetime.fs" />
-	<Compile Include="arc\BArc.fs" />
+    <None Include="compiler\Parser.fs" />
+    <Compile Include="vt\FreeLifetime.fs" />
+	<Compile Include="vt\VT.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="ClangSharp" Version="21.1.8.3" />
     <PackageReference Include="FParsec" Version="1.1.1" />
   </ItemGroup>
 
