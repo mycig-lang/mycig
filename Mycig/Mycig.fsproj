@@ -16,6 +16,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="fop\Replenishment.fs" />
+    <Compile Include="vt\FreeLifetime.fs" />
+    <Compile Include="vt\VT.fs" />
     <Compile Include="files\ReadFile.fs" />
     <None Include="compiler\FlatAST.fs" />
     <None Include="compiler\ASTInserter.fs" />
@@ -24,8 +27,6 @@
     <Compile Include="compiler\SimpleScope.fs" />
     <Compile Include="compiler\Parser.Module.fs" />
     <None Include="compiler\Parser.fs" />
-    <Compile Include="vt\FreeLifetime.fs" />
-	<Compile Include="vt\VT.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
