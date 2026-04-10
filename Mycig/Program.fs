@@ -6,7 +6,7 @@ open Mycig
 [<EntryPoint>]
 let main _ =
 //    let p = Parser()
-
+// <T1: [U1, U2], T2: [U3, U4, U5]>
 //    let code =
 //        @"
 //package main
@@ -28,5 +28,8 @@ let main _ =
 
 //    printfn "%A" fast
 
-    let lexer = Lexer(0, "abc")
+    let iter = Iterator("abc")
+    for _ in 1..4 do
+        iter.get() |> printfn "%A"
+
     0
