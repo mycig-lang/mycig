@@ -1,7 +1,6 @@
-﻿open FParsec
-open Mycig.Compiler
-open Mycig.Lexer
-open Mycig
+﻿open Rectol.Compiler.Library
+open Rectol.Lexer
+open Rectol
 
 [<EntryPoint>]
 let main _ =
@@ -27,9 +26,13 @@ let main _ =
 //    let fast = p.getFlatAST()
 
 //    printfn "%A" fast
+    
+    let p = parser {
+        let! list = many1 (pstring "a")
+        printfn "%A" list
+        return list |> String.concat ""
+    }
 
-    let iter = Iterator("abc")
-    for _ in 1..4 do
-        iter.get() |> printfn "%A"
+    run p "aaabb" |> printfn "%A"
 
     0

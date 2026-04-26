@@ -1,4 +1,4 @@
-namespace Mycig.Lexer
+namespace Rectol.Lexer
 
 type Iterator(str: string) =
     let f =

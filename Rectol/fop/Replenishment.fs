@@ -1,3 +1,3 @@
-namespace Mycig.FOP
+namespace Rectol.FOP
 
 type Replenish() = class end

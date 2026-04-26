@@ -1,4 +1,4 @@
-namespace Mycig.Lifetime
+namespace Rectol.Lifetime
 
 type FreeLifetime() =
     class end

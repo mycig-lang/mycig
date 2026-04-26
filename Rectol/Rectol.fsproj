@@ -17,16 +17,18 @@
 
   <ItemGroup>
     <Compile Include="fop\Replenishment.fs" />
-    <Compile Include="vt\FreeLifetime.fs" />
-    <Compile Include="vt\VT.fs" />
+    <None Include="mr\README.md" />
+    <Compile Include="mr\FreeLifetime.fs" />
+    <Compile Include="mr\MR.fs" />
     <Compile Include="files\ReadFile.fs" />
     <None Include="compiler\FlatAST.fs" />
     <None Include="compiler\ASTInserter.fs" />
     <None Include="compiler\TypeInference.fs" />
 	<Compile Include="compiler\lexer\Lexer.fs" />
+	<Compile Include="compiler\parser\ParserLib.fs" />
     <Compile Include="compiler\SimpleScope.fs" />
-    <Compile Include="compiler\Parser.Module.fs" />
-    <None Include="compiler\Parser.fs" />
+    <Compile Include="compiler\Parser.fs" />
+    <None Include="compiler\OldParser.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

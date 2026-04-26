@@ -1,4 +1,4 @@
-namespace Mycig
+namespace Rectol
 
 open System.IO
 
