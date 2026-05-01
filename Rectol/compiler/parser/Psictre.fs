@@ -1,5 +1,6 @@
 namespace Psictre
 
+type TypeConstrait<'a> = 'a -> Result<bool, string>
 type Parser<'a> = string -> Result<'a * string, string>
 
 [<AutoOpen>]
@@ -20,11 +21,17 @@ module private ParserFunc =
 [<AutoOpen>]
 module ParserType =
     open ParserFunc
+
+    type TypeResearch() =
+        member __.Yield(x: TypeConstrait<'a>) = [x]
+        member __.Combine(a, b) = a @ b
+        member __.Delay(f) = f()
+
     type ParserBuilder() =
-        member _.Bind(p, f) = bind f p
-        member _.Return(x) = result x
-        member _.ReturnFrom(p) = p
-        member _.Zero() = fail
+        member __.Bind(p, f) = bind f p
+        member __.Return(x) = result x
+        member __.ReturnFrom(p) = p
+        member __.Zero() = fail
 
 [<AutoOpen>]
 module ComputationExpressionForParser =
@@ -32,6 +39,7 @@ module ComputationExpressionForParser =
     open System
 
     let parse = ParserBuilder()
+    let typeResearch = TypeResearch()
 
     let attempt (p: Parser<'a>) =
         fun input ->
